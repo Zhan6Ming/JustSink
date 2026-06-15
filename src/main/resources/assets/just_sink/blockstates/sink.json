@@ -1,0 +1,20 @@
+{
+  "variants": {
+    "facing=south": {
+      "model": "just_sink:block/sink",
+      "y": 0
+    },
+    "facing=west": {
+      "model": "just_sink:block/sink",
+      "y": 90
+    },
+    "facing=north": {
+      "model": "just_sink:block/sink",
+      "y": 180
+    },
+    "facing=east": {
+      "model": "just_sink:block/sink",
+      "y": 270
+    }
+  }
+}
