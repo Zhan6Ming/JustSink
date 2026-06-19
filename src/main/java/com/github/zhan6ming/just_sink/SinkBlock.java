@@ -24,7 +24,6 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import com.mojang.serialization.MapCodec;
 import net.minecraft.world.level.BlockGetter;
-import net.minecraft.world.level.material.Fluid;
 import net.minecraft.world.level.material.Fluids;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
@@ -32,6 +31,7 @@ import net.minecraft.world.phys.shapes.CollisionContext;
 import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.world.phys.shapes.VoxelShape;
 import net.neoforged.neoforge.capabilities.Capabilities;
+import net.neoforged.neoforge.common.SoundActions;
 import net.neoforged.neoforge.fluids.FluidStack;
 import net.neoforged.neoforge.fluids.FluidType;
 import net.neoforged.neoforge.fluids.capability.IFluidHandler;
@@ -44,7 +44,7 @@ import org.slf4j.Logger;
  * <p>
  * 交互逻辑：
  * <ol>
- *     <li>空玻璃瓶 → 水瓶（硬编码，因玻璃瓶无 IFluidHandlerItem 且需要 PotionContents）</li>
+ *     <li>空玻璃瓶 → 水瓶（硬编码，因玻璃瓶无 {@link IFluidHandlerItem} 且需要 {@link PotionContents} 数据组件）</li>
  *     <li>通用 {@link IFluidHandlerItem} 兜底（自动兼容原版桶、模组流体容器等一切拥有流体能力的物品）</li>
  * </ol>
  * 自动化流体逻辑由 {@link SinkBlockEntity} 中的 {@link IFluidHandler} 实现。
@@ -92,7 +92,7 @@ public class SinkBlock extends HorizontalDirectionalBlock implements EntityBlock
 
     public SinkBlock(Properties properties) {
         super(properties);
-        this.registerDefaultState(this.stateDefinition.any().setValue(FACING, net.minecraft.core.Direction.NORTH));
+        this.registerDefaultState(this.stateDefinition.any().setValue(FACING, Direction.NORTH));
     }
 
     @Override
@@ -101,7 +101,7 @@ public class SinkBlock extends HorizontalDirectionalBlock implements EntityBlock
     }
 
     @Override
-    protected void createBlockStateDefinition(net.minecraft.world.level.block.state.StateDefinition.Builder<Block, BlockState> builder) {
+    protected void createBlockStateDefinition(StateDefinition.Builder<Block, BlockState> builder) {
         builder.add(FACING);
     }
 
@@ -130,8 +130,10 @@ public class SinkBlock extends HorizontalDirectionalBlock implements EntityBlock
      * 玩家手持物品右键方块时的交互逻辑。
      * <p>
      * 处理顺序：
-     * 1. 空玻璃瓶硬编码（无 IFluidHandlerItem，需 PotionContents 数据组件）
-     * 2. 通用 IFluidHandlerItem 兜底（覆盖原版桶、模组流体容器等）
+     * <ol>
+     *     <li>空玻璃瓶硬编码（无 {@link IFluidHandlerItem}，需 {@link PotionContents} 数据组件）</li>
+     *     <li>通用 {@link IFluidHandlerItem} 兜底（覆盖原版桶、模组流体容器等）</li>
+     * </ol>
      */
     @Override
     protected InteractionResult useItemOn(ItemStack stack, BlockState state, Level level,
@@ -159,16 +161,14 @@ public class SinkBlock extends HorizontalDirectionalBlock implements EntityBlock
     }
 
     /**
-     * 通用流体容器交互处理 —— 参考 Mekanism 的 {@code FluidUtils.handleTankInteraction()}。
-     * <p>
-     * 通过 NeoForge 的 {@link IFluidHandlerItem} Capability 系统与任何模组的流体容器交互。
+     * 通用流体容器交互处理 —— 通过 NeoForge 的 {@link IFluidHandlerItem} Capability 系统与任何模组的流体容器交互。
      * <p>
      * 流程：
      * <ol>
-     *     <li>复制物品栈（count=1），获取其 IFluidHandlerItem</li>
+     *     <li>复制物品栈（count=1），获取其 {@link IFluidHandlerItem}</li>
      *     <li>尝试从物品 drain 流体 → 有流体则倒入水槽（垃圾桶功能）</li>
      *     <li>物品无流体 → 从水槽 drain 水填入物品（无限水源功能）</li>
-     *     <li>根据流体类型播放对应音效</li>
+     *     <li>通过 {@link FluidType#getSound(SoundAction)} 获取流体对应的音效</li>
      *     <li>处理容器物品返回和创造模式逻辑</li>
      * </ol>
      */
@@ -190,15 +190,18 @@ public class SinkBlock extends HorizontalDirectionalBlock implements EntityBlock
             FluidStack drained = handlerItem.drain(fluidInItem.getAmount(),
                     isCreative ? IFluidHandler.FluidAction.SIMULATE : IFluidHandler.FluidAction.EXECUTE);
             if (!drained.isEmpty()) {
-                // 水槽吞噬流体
+                // 水槽吞噬流体（不存储，直接丢弃）
                 sinkEntity.fill(drained, IFluidHandler.FluidAction.EXECUTE);
 
                 if (!isCreative) {
                     replaceItemInHand(player, hand, stack, handlerItem.getContainer());
                 }
 
-                // 根据流体类型播放倒出音效
-                level.playSound(player, pos, getFluidEmptySound(drained.getFluid()), SoundSource.BLOCKS, 1.0F, 1.0F);
+                // 通过 FluidType 获取流体的倒出音效，兼容所有模组流体
+                SoundEvent emptySound = drained.getFluid().getFluidType().getSound(SoundActions.BUCKET_EMPTY);
+                level.playSound(player, pos,
+                        emptySound != null ? emptySound : SoundEvents.BUCKET_EMPTY,
+                        SoundSource.BLOCKS, 1.0F, 1.0F);
                 return InteractionResult.SUCCESS;
             }
         }
@@ -212,14 +215,14 @@ public class SinkBlock extends HorizontalDirectionalBlock implements EntityBlock
                 replaceItemInHand(player, hand, stack, handlerItem.getContainer());
             }
 
-            // 根据物品中最终的流体类型播放装水音效
+            // 通过 FluidType 获取流体的装入音效，兼容所有模组流体
             FluidStack resultFluid = handlerItem.getFluidInTank(0);
-            if (!resultFluid.isEmpty()) {
-                level.playSound(player, pos, getFluidFillSound(resultFluid.getFluid()), SoundSource.BLOCKS, 1.0F, 1.0F);
-            } else {
-                LOGGER.debug("getFluidInTank 返回空流体栈，使用默认装水音效");
-                level.playSound(player, pos, SoundEvents.BUCKET_FILL, SoundSource.BLOCKS, 1.0F, 1.0F);
-            }
+            SoundEvent fillSound = resultFluid.isEmpty()
+                    ? SoundEvents.BUCKET_FILL
+                    : resultFluid.getFluid().getFluidType().getSound(SoundActions.BUCKET_FILL);
+            level.playSound(player, pos,
+                    fillSound != null ? fillSound : SoundEvents.BUCKET_FILL,
+                    SoundSource.BLOCKS, 1.0F, 1.0F);
             return InteractionResult.SUCCESS;
         }
 
@@ -242,21 +245,5 @@ public class SinkBlock extends HorizontalDirectionalBlock implements EntityBlock
                 player.drop(container, false, true);
             }
         }
-    }
-
-    /** 根据流体类型获取倒出音效 */
-    private SoundEvent getFluidEmptySound(Fluid fluid) {
-        if (fluid == Fluids.LAVA) {
-            return SoundEvents.BUCKET_EMPTY_LAVA;
-        }
-        return SoundEvents.BUCKET_EMPTY;
-    }
-
-    /** 根据流体类型获取装入音效 */
-    private SoundEvent getFluidFillSound(Fluid fluid) {
-        if (fluid == Fluids.LAVA) {
-            return SoundEvents.BUCKET_FILL_LAVA;
-        }
-        return SoundEvents.BUCKET_FILL;
     }
 }

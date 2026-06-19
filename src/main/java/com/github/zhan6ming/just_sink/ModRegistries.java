@@ -22,7 +22,7 @@ import java.util.function.Supplier;
 /**
  * 统一注册表类 —— 集中管理所有方块、物品、方块实体类型和创造模式标签页的注册。
  * <p>
- * 使用 NeoForge 1.21.1 推荐的 DeferredRegister 模式，
+ * 使用 NeoForge 推荐的 {@link DeferredRegister} 模式，
  * 避免静态初始化器中直接引用注册对象，确保注册顺序安全。
  */
 public class ModRegistries {
@@ -66,7 +66,7 @@ public class ModRegistries {
     /**
      * 水槽方块的 MapCodec —— 用于方块序列化/反序列化。
      * <p>
-     * 单独注册而非在 {@code codec()} 中内联创建，符合 NeoForge 1.21.1 最佳实践。
+     * 单独注册而非在 {@code codec()} 中内联创建，符合 NeoForge 最佳实践。
      */
     public static final Supplier<MapCodec<SinkBlock>> SINK_CODEC =
             BLOCK_TYPES.register("sink", () -> BlockBehaviour.simpleCodec(SinkBlock::new));
@@ -82,10 +82,10 @@ public class ModRegistries {
     // ==================== 方块实体类型 ====================
 
     /**
-     * 水槽方块实体类型 —— 关联 SinkBlockEntity 和 SINK_BLOCK。
+     * 水槽方块实体类型 —— 关联 {@link SinkBlockEntity} 和 {@link #SINK_BLOCK}。
      * <p>
-     * NeoForge 1.21.1（21.1.x）中 BlockEntityType 仍使用 Builder 模式构建。
-     * {@code build(null)} 中的 null 是 DataFixer Type 参数，对于模组方块实体传 null 即可。
+     * NeoForge 1.21.10+ 中 {@link BlockEntityType} 使用直接构造函数，
+     * 不再需要旧版的 {@code Builder.of(...).build(null)} 模式。
      */
     public static final Supplier<BlockEntityType<SinkBlockEntity>> SINK_BLOCK_ENTITY =
             BLOCK_ENTITY_TYPES.register("sink",
