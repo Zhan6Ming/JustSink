@@ -13,8 +13,8 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemUtils;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
-import net.minecraft.world.item.alchemy.Potions;
 import net.minecraft.world.item.alchemy.PotionContents;
+import net.minecraft.world.item.alchemy.Potions;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.EntityBlock;
@@ -22,6 +22,7 @@ import net.minecraft.world.level.block.HorizontalDirectionalBlock;
 import net.minecraft.world.level.block.RenderShape;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.StateDefinition;
 import com.mojang.serialization.MapCodec;
 import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.material.Fluids;
@@ -32,10 +33,11 @@ import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.world.phys.shapes.VoxelShape;
 import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.common.SoundActions;
-import net.neoforged.neoforge.fluids.FluidStack;
 import net.neoforged.neoforge.fluids.FluidType;
-import net.neoforged.neoforge.fluids.capability.IFluidHandler;
-import net.neoforged.neoforge.fluids.capability.IFluidHandlerItem;
+import net.neoforged.neoforge.transfer.ResourceHandler;
+import net.neoforged.neoforge.transfer.access.ItemAccess;
+import net.neoforged.neoforge.transfer.fluid.FluidResource;
+import net.neoforged.neoforge.transfer.transaction.Transaction;
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 
@@ -44,14 +46,17 @@ import org.slf4j.Logger;
  * <p>
  * 交互逻辑：
  * <ol>
- *     <li>空玻璃瓶 → 水瓶（硬编码，因玻璃瓶无 {@link IFluidHandlerItem} 且需要 {@link PotionContents} 数据组件）</li>
- *     <li>通用 {@link IFluidHandlerItem} 兜底（自动兼容原版桶、模组流体容器等一切拥有流体能力的物品）</li>
+ *     <li>空玻璃瓶 → 水瓶（硬编码，因玻璃瓶无流体 Capability 且需要 {@link PotionContents} 数据组件）</li>
+ *     <li>通用 {@link ResourceHandler}{@code <}{@link FluidResource}{@code >} 兜底（自动兼容原版桶、模组流体容器等）</li>
  * </ol>
- * 自动化流体逻辑由 {@link SinkBlockEntity} 中的 {@link IFluidHandler} 实现。
+ * 自动化流体逻辑由 {@link SinkBlockEntity} 中的 {@link ResourceHandler}{@code <}{@link FluidResource}{@code >} 实现。
  */
 public class SinkBlock extends HorizontalDirectionalBlock implements EntityBlock {
 
     private static final Logger LOGGER = LogUtils.getLogger();
+
+    /** 水流体资源的缓存实例 */
+    private static final FluidResource WATER_RESOURCE = FluidResource.of(Fluids.WATER);
 
     // 按模型元素定义碰撞箱（排除装饰性水龙头部分）
     // 默认朝向 south（对应 blockstate y=0），然后旋转到各方向
@@ -131,8 +136,8 @@ public class SinkBlock extends HorizontalDirectionalBlock implements EntityBlock
      * <p>
      * 处理顺序：
      * <ol>
-     *     <li>空玻璃瓶硬编码（无 {@link IFluidHandlerItem}，需 {@link PotionContents} 数据组件）</li>
-     *     <li>通用 {@link IFluidHandlerItem} 兜底（覆盖原版桶、模组流体容器等）</li>
+     *     <li>空玻璃瓶硬编码（无流体 Capability，需 {@link PotionContents} 数据组件）</li>
+     *     <li>通用 {@link ResourceHandler}{@code <}{@link FluidResource}{@code >} 兜底</li>
      * </ol>
      */
     @Override
@@ -152,98 +157,82 @@ public class SinkBlock extends HorizontalDirectionalBlock implements EntityBlock
             return InteractionResult.SUCCESS;
         }
 
-        // ======================== 通用 IFluidHandlerItem 处理 ========================
-        if (level.getBlockEntity(pos) instanceof SinkBlockEntity sinkEntity) {
-            return handleFluidContainerInteraction(stack, level, pos, player, hand, sinkEntity);
+        // ======================== 通用 ResourceHandler<FluidResource> 处理 ========================
+        if (level.getBlockEntity(pos) instanceof SinkBlockEntity) {
+            return handleFluidContainerInteraction(level, pos, player, hand);
         }
 
         return InteractionResult.PASS;
     }
 
     /**
-     * 通用流体容器交互处理 —— 通过 NeoForge 的 {@link IFluidHandlerItem} Capability 系统与任何模组的流体容器交互。
+     * 通用流体容器交互处理 —— 通过 NeoForge 的 {@link ItemAccess} + {@link ResourceHandler}{@code <}{@link FluidResource}{@code >}
+     * Capability 系统与任何模组的流体容器交互。
      * <p>
      * 流程：
      * <ol>
-     *     <li>复制物品栈（count=1），获取其 {@link IFluidHandlerItem}</li>
-     *     <li>尝试从物品 drain 流体 → 有流体则倒入水槽（垃圾桶功能）</li>
-     *     <li>物品无流体 → 从水槽 drain 水填入物品（无限水源功能）</li>
-     *     <li>通过 {@link FluidType#getSound(SoundAction)} 获取流体对应的音效</li>
-     *     <li>处理容器物品返回和创造模式逻辑</li>
+     *     <li>通过 {@link ItemAccess#forPlayerInteraction} 获取物品访问（自动处理创造模式）</li>
+     *     <li>获取物品的流体 Capability</li>
+     *     <li>尝试从物品 extract 流体 → 有流体则倒入水槽（垃圾桶功能）</li>
+     *     <li>物品无流体 → 从水槽 insert 水填入物品（无限水源功能）</li>
+     *     <li>通过 {@link FluidResource#getFluidType()} 获取流体对应的音效</li>
      * </ol>
      */
-    private InteractionResult handleFluidContainerInteraction(ItemStack stack, Level level,
-                                                               BlockPos pos, Player player,
-                                                               InteractionHand hand,
-                                                               SinkBlockEntity sinkEntity) {
-        ItemStack copyStack = stack.copyWithCount(1);
-        IFluidHandlerItem handlerItem = copyStack.getCapability(Capabilities.FluidHandler.ITEM);
+    private InteractionResult handleFluidContainerInteraction(Level level, BlockPos pos,
+                                                               Player player, InteractionHand hand) {
+        // 使用 ItemAccess.forPlayerInteraction 自动处理创造模式逻辑
+        ItemAccess itemAccess = ItemAccess.forPlayerInteraction(player, hand);
+        ResourceHandler<FluidResource> handlerItem = itemAccess.getCapability(Capabilities.Fluid.ITEM);
         if (handlerItem == null) {
             return InteractionResult.PASS;
         }
 
-        boolean isCreative = player.getAbilities().instabuild;
-
-        // ===== 步骤 1：尝试从物品 drain 流体（物品 → 水槽，垃圾桶功能）=====
-        FluidStack fluidInItem = handlerItem.drain(Integer.MAX_VALUE, IFluidHandler.FluidAction.SIMULATE);
-        if (!fluidInItem.isEmpty()) {
-            FluidStack drained = handlerItem.drain(fluidInItem.getAmount(),
-                    isCreative ? IFluidHandler.FluidAction.SIMULATE : IFluidHandler.FluidAction.EXECUTE);
-            if (!drained.isEmpty()) {
-                // 水槽吞噬流体（不存储，直接丢弃）
-                sinkEntity.fill(drained, IFluidHandler.FluidAction.EXECUTE);
-
-                if (!isCreative) {
-                    replaceItemInHand(player, hand, stack, handlerItem.getContainer());
+        // ===== 步骤 1：尝试从物品 extract 流体（物品 → 水槽，垃圾桶功能）=====
+        if (handlerItem.getAmountAsInt(0) > 0) {
+            FluidResource storedResource = handlerItem.getResource(0);
+            if (!storedResource.isEmpty()) {
+                try (Transaction transaction = Transaction.openRoot()) {
+                    int extracted = handlerItem.extract(storedResource, Integer.MAX_VALUE, transaction);
+                    if (extracted > 0) {
+                        transaction.commit();
+                        // 水槽吞噬流体（不存储，直接丢弃）
+                        playFluidSound(level, player, pos, storedResource, SoundActions.BUCKET_EMPTY);
+                        return InteractionResult.SUCCESS;
+                    }
                 }
-
-                // 通过 FluidType 获取流体的倒出音效，兼容所有模组流体
-                SoundEvent emptySound = drained.getFluid().getFluidType().getSound(SoundActions.BUCKET_EMPTY);
-                level.playSound(player, pos,
-                        emptySound != null ? emptySound : SoundEvents.BUCKET_EMPTY,
-                        SoundSource.BLOCKS, 1.0F, 1.0F);
-                return InteractionResult.SUCCESS;
             }
         }
 
         // ===== 步骤 2：尝试从水槽装水（水槽 → 物品，无限水源功能）=====
-        FluidStack waterToFill = new FluidStack(Fluids.WATER, FluidType.BUCKET_VOLUME);
-        int filled = handlerItem.fill(waterToFill,
-                isCreative ? IFluidHandler.FluidAction.SIMULATE : IFluidHandler.FluidAction.EXECUTE);
-        if (filled > 0) {
-            if (!isCreative) {
-                replaceItemInHand(player, hand, stack, handlerItem.getContainer());
+        try (Transaction transaction = Transaction.openRoot()) {
+            int filled = handlerItem.insert(WATER_RESOURCE, FluidType.BUCKET_VOLUME, transaction);
+            if (filled > 0) {
+                transaction.commit();
+                // 通过 FluidType 获取流体的装入音效
+                playFluidSound(level, player, pos, WATER_RESOURCE, SoundActions.BUCKET_FILL);
+                return InteractionResult.SUCCESS;
             }
-
-            // 通过 FluidType 获取流体的装入音效，兼容所有模组流体
-            FluidStack resultFluid = handlerItem.getFluidInTank(0);
-            SoundEvent fillSound = resultFluid.isEmpty()
-                    ? SoundEvents.BUCKET_FILL
-                    : resultFluid.getFluid().getFluidType().getSound(SoundActions.BUCKET_FILL);
-            level.playSound(player, pos,
-                    fillSound != null ? fillSound : SoundEvents.BUCKET_FILL,
-                    SoundSource.BLOCKS, 1.0F, 1.0F);
-            return InteractionResult.SUCCESS;
         }
 
         return InteractionResult.PASS;
     }
 
     /**
-     * 将容器物品放回玩家手中或背包。
-     * <ul>
-     *     <li>手中只有 1 个：直接替换</li>
-     *     <li>手中有多个：缩减数量，容器放入背包（满则掉落）</li>
-     * </ul>
+     * 播放流体相关音效。
+     * 通过 {@link FluidResource#getFluidType()} 获取流体对应的音效，兼容所有模组流体。
+     *
+     * @param level    世界
+     * @param player   玩家
+     * @param pos      方块位置
+     * @param resource 流体资源
+     * @param action   音效动作（{@link SoundActions#BUCKET_EMPTY} 或 {@link SoundActions#BUCKET_FILL}）
      */
-    private void replaceItemInHand(Player player, InteractionHand hand, ItemStack original, ItemStack container) {
-        if (original.getCount() == 1) {
-            player.setItemInHand(hand, container);
-        } else {
-            original.shrink(1);
-            if (!player.getInventory().add(container)) {
-                player.drop(container, false, true);
-            }
-        }
+    private void playFluidSound(Level level, Player player, BlockPos pos,
+                                 FluidResource resource, net.neoforged.neoforge.common.SoundAction action) {
+        SoundEvent sound = resource.getFluidType().getSound(action);
+        SoundEvent fallback = (action == SoundActions.BUCKET_EMPTY)
+                ? SoundEvents.BUCKET_EMPTY
+                : SoundEvents.BUCKET_FILL;
+        level.playSound(player, pos, sound != null ? sound : fallback, SoundSource.BLOCKS, 1.0F, 1.0F);
     }
 }
