@@ -87,13 +87,12 @@ public class ModRegistries {
      * NeoForge 1.21.1（21.1.x）中 BlockEntityType 仍使用 Builder 模式构建。
      * {@code build(null)} 中的 null 是 DataFixer Type 参数，对于模组方块实体传 null 即可。
      */
-    @SuppressWarnings("DataFlowIssue")
     public static final Supplier<BlockEntityType<SinkBlockEntity>> SINK_BLOCK_ENTITY =
             BLOCK_ENTITY_TYPES.register("sink",
-                    () -> BlockEntityType.Builder.of(
+                    () -> new BlockEntityType<>(
                             SinkBlockEntity::new,
                             SINK_BLOCK.get()
-                    ).build(null));
+                    ));
 
     // ==================== 创造模式标签页 ====================
 

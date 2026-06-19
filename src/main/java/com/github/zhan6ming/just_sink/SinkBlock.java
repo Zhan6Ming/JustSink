@@ -8,7 +8,7 @@ import net.minecraft.sounds.SoundEvent;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.InteractionHand;
-import net.minecraft.world.ItemInteractionResult;
+import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemUtils;
 import net.minecraft.world.item.ItemStack;
@@ -134,11 +134,11 @@ public class SinkBlock extends HorizontalDirectionalBlock implements EntityBlock
      * 2. 通用 IFluidHandlerItem 兜底（覆盖原版桶、模组流体容器等）
      */
     @Override
-    protected ItemInteractionResult useItemOn(ItemStack stack, BlockState state, Level level,
-                                               BlockPos pos, Player player, InteractionHand hand,
-                                               BlockHitResult hit) {
+    protected InteractionResult useItemOn(ItemStack stack, BlockState state, Level level,
+                                           BlockPos pos, Player player, InteractionHand hand,
+                                           BlockHitResult hit) {
         if (hand != InteractionHand.MAIN_HAND) {
-            return ItemInteractionResult.PASS_TO_DEFAULT_BLOCK_INTERACTION;
+            return InteractionResult.PASS;
         }
 
         // ======================== 玻璃瓶装水（硬编码，无法用 Capability 表达）========================
@@ -147,7 +147,7 @@ public class SinkBlock extends HorizontalDirectionalBlock implements EntityBlock
             waterBottle.set(DataComponents.POTION_CONTENTS, new PotionContents(Potions.WATER));
             player.setItemInHand(hand, ItemUtils.createFilledResult(stack, player, waterBottle));
             level.playSound(player, pos, SoundEvents.BOTTLE_FILL, SoundSource.BLOCKS, 1.0F, 1.0F);
-            return ItemInteractionResult.sidedSuccess(level.isClientSide);
+            return InteractionResult.SUCCESS;
         }
 
         // ======================== 通用 IFluidHandlerItem 处理 ========================
@@ -155,7 +155,7 @@ public class SinkBlock extends HorizontalDirectionalBlock implements EntityBlock
             return handleFluidContainerInteraction(stack, level, pos, player, hand, sinkEntity);
         }
 
-        return ItemInteractionResult.PASS_TO_DEFAULT_BLOCK_INTERACTION;
+        return InteractionResult.PASS;
     }
 
     /**
@@ -172,14 +172,14 @@ public class SinkBlock extends HorizontalDirectionalBlock implements EntityBlock
      *     <li>处理容器物品返回和创造模式逻辑</li>
      * </ol>
      */
-    private ItemInteractionResult handleFluidContainerInteraction(ItemStack stack, Level level,
-                                                                   BlockPos pos, Player player,
-                                                                   InteractionHand hand,
-                                                                   SinkBlockEntity sinkEntity) {
+    private InteractionResult handleFluidContainerInteraction(ItemStack stack, Level level,
+                                                               BlockPos pos, Player player,
+                                                               InteractionHand hand,
+                                                               SinkBlockEntity sinkEntity) {
         ItemStack copyStack = stack.copyWithCount(1);
         IFluidHandlerItem handlerItem = copyStack.getCapability(Capabilities.FluidHandler.ITEM);
         if (handlerItem == null) {
-            return ItemInteractionResult.PASS_TO_DEFAULT_BLOCK_INTERACTION;
+            return InteractionResult.PASS;
         }
 
         boolean isCreative = player.getAbilities().instabuild;
@@ -199,7 +199,7 @@ public class SinkBlock extends HorizontalDirectionalBlock implements EntityBlock
 
                 // 根据流体类型播放倒出音效
                 level.playSound(player, pos, getFluidEmptySound(drained.getFluid()), SoundSource.BLOCKS, 1.0F, 1.0F);
-                return ItemInteractionResult.sidedSuccess(level.isClientSide);
+                return InteractionResult.SUCCESS;
             }
         }
 
@@ -220,10 +220,10 @@ public class SinkBlock extends HorizontalDirectionalBlock implements EntityBlock
                 LOGGER.debug("getFluidInTank 返回空流体栈，使用默认装水音效");
                 level.playSound(player, pos, SoundEvents.BUCKET_FILL, SoundSource.BLOCKS, 1.0F, 1.0F);
             }
-            return ItemInteractionResult.sidedSuccess(level.isClientSide);
+            return InteractionResult.SUCCESS;
         }
 
-        return ItemInteractionResult.PASS_TO_DEFAULT_BLOCK_INTERACTION;
+        return InteractionResult.PASS;
     }
 
     /**
