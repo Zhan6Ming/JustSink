@@ -53,13 +53,17 @@ public class ModRegistries {
 
     /**
      * 水槽方块 —— 石质外观，需要镐采集。
+     * <p>
+     * 使用 {@code registerBlock} 而非 {@code register}，确保方块 ID 在构造前注入到 Properties 中，
+     * 避免 NeoForge 1.21.11+ 中 {@code effectiveDrops()} 因 "Block id not set" 而崩溃。
      */
-    public static final DeferredBlock<Block> SINK_BLOCK = BLOCKS.register("sink",
-            () -> new SinkBlock(BlockBehaviour.Properties.of()
+    public static final DeferredBlock<Block> SINK_BLOCK = BLOCKS.registerBlock("sink",
+            SinkBlock::new,
+            () -> BlockBehaviour.Properties.of()
                     .mapColor(MapColor.STONE)
                     .requiresCorrectToolForDrops()
                     .strength(2.0F, 6.0F)
-                    .sound(SoundType.STONE)));
+                    .sound(SoundType.STONE));
 
     // ==================== 方块类型（Codec）====================
 
