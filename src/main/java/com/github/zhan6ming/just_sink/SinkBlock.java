@@ -55,8 +55,15 @@ public class SinkBlock extends HorizontalDirectionalBlock implements EntityBlock
 
     private static final Logger LOGGER = LogUtils.getLogger();
 
-    /** 水流体资源的缓存实例 */
-    private static final FluidResource WATER_RESOURCE = FluidResource.of(Fluids.WATER);
+    /**
+     * 水流体资源的延迟初始化。
+     * <p>
+     * 不能使用 {@code static final} 直接初始化，因为 {@link FluidResource#of} 在 NeoForge 26.X 中
+     * 需要访问注册表的组件绑定（"Components not bound yet"），而类加载时注册表尚未就绪。
+     */
+    private static FluidResource waterResource() {
+        return FluidResource.of(Fluids.WATER);
+    }
 
     // 按模型元素定义碰撞箱（排除装饰性水龙头部分）
     // 默认朝向 south（对应 blockstate y=0），然后旋转到各方向
@@ -205,11 +212,11 @@ public class SinkBlock extends HorizontalDirectionalBlock implements EntityBlock
 
         // ===== 步骤 2：尝试从水槽装水（水槽 → 物品，无限水源功能）=====
         try (Transaction transaction = Transaction.openRoot()) {
-            int filled = handlerItem.insert(WATER_RESOURCE, FluidType.BUCKET_VOLUME, transaction);
+            int filled = handlerItem.insert(waterResource(), FluidType.BUCKET_VOLUME, transaction);
             if (filled > 0) {
                 transaction.commit();
                 // 通过 FluidType 获取流体的装入音效
-                playFluidSound(level, player, pos, WATER_RESOURCE, SoundActions.BUCKET_FILL);
+                playFluidSound(level, player, pos, waterResource(), SoundActions.BUCKET_FILL);
                 return InteractionResult.SUCCESS;
             }
         }

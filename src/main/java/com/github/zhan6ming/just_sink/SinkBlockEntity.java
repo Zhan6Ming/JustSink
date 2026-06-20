@@ -26,8 +26,13 @@ public class SinkBlockEntity extends BlockEntity implements ResourceHandler<Flui
     /** 水槽始终显示为一个虚拟水槽 */
     private static final int TANK_COUNT = 1;
 
-    /** 水流体资源的缓存实例，避免重复创建 */
-    private static final FluidResource WATER_RESOURCE = FluidResource.of(Fluids.WATER);
+    /**
+     * 水流体资源的延迟初始化。
+     * 不能使用 {@code static final} 直接初始化，原因同 {@link SinkBlock#waterResource()}。
+     */
+    private static FluidResource waterResource() {
+        return FluidResource.of(Fluids.WATER);
+    }
 
     /**
      * 构造函数 —— 签名必须匹配 {@code BlockEntityType.BlockEntitySupplier} 接口：
@@ -55,7 +60,7 @@ public class SinkBlockEntity extends BlockEntity implements ResourceHandler<Flui
      */
     @Override
     public FluidResource getResource(int index) {
-        return WATER_RESOURCE;
+        return waterResource();
     }
 
     /**
