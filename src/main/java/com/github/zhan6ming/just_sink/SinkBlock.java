@@ -143,8 +143,9 @@ public class SinkBlock extends HorizontalDirectionalBlock implements EntityBlock
      * <p>
      * 处理顺序：
      * <ol>
-     *     <li>空玻璃瓶硬编码（无流体 Capability，需 {@link PotionContents} 数据组件）</li>
-     *     <li>通用 {@link ResourceHandler}{@code <}{@link FluidResource}{@code >} 兜底</li>
+     *     <li>空玻璃瓶 → 水瓶（装水，硬编码）</li>
+     *     <li>水瓶 → 空玻璃瓶（倒水，硬编码）</li>
+     *     <li>通用 {@link ResourceHandler}{@code <}{@link FluidResource}{@code >} 兜底（桶等流体容器）</li>
      * </ol>
      */
     @Override
@@ -155,13 +156,23 @@ public class SinkBlock extends HorizontalDirectionalBlock implements EntityBlock
             return InteractionResult.PASS;
         }
 
-        // ======================== 玻璃瓶装水（硬编码，无法用 Capability 表达）========================
+        // ======================== 空玻璃瓶 → 水瓶（装水）========================
         if (stack.is(Items.GLASS_BOTTLE)) {
             ItemStack waterBottle = new ItemStack(Items.POTION);
             waterBottle.set(DataComponents.POTION_CONTENTS, new PotionContents(Potions.WATER));
             player.setItemInHand(hand, ItemUtils.createFilledResult(stack, player, waterBottle));
             level.playSound(player, pos, SoundEvents.BOTTLE_FILL, SoundSource.BLOCKS, 1.0F, 1.0F);
             return InteractionResult.SUCCESS;
+        }
+
+        // ======================== 水瓶 → 空玻璃瓶（倒水）========================
+        if (stack.is(Items.POTION)) {
+            PotionContents contents = stack.get(DataComponents.POTION_CONTENTS);
+            if (contents != null && contents.is(Potions.WATER)) {
+                player.setItemInHand(hand, ItemUtils.createFilledResult(stack, player, new ItemStack(Items.GLASS_BOTTLE)));
+                level.playSound(player, pos, SoundEvents.BOTTLE_EMPTY, SoundSource.BLOCKS, 1.0F, 1.0F);
+                return InteractionResult.SUCCESS;
+            }
         }
 
         // ======================== 通用 ResourceHandler<FluidResource> 处理 ========================
