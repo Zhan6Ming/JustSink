@@ -1,0 +1,49 @@
+plugins {
+    id "net.fabricmc.fabric-loom" version "${loom_version}"
+}
+
+version = project.mod_version
+group = project.mod_group_id
+
+base {
+    archivesName = "${project.mod_id}-fabric"
+}
+
+java.toolchain.languageVersion = JavaLanguageVersion.of(25)
+
+dependencies {
+    // Minecraft（不声明映射，Loom 自动使用 Mojang 官方映射）
+    minecraft "com.mojang:minecraft:${project.minecraft_version}"
+
+    // Fabric Loader（参考 Create-Fly：使用 implementation 而非 modImplementation）
+    implementation "net.fabricmc:fabric-loader:${project.loader_version}"
+
+    // Fabric API
+    implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+}
+
+processResources {
+    // 展开 fabric.mod.json 中的属性占位符
+    inputs.property "version", project.version
+
+    filesMatching("fabric.mod.json") {
+        expand "version": project.version
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    it.options.encoding = "UTF-8"
+    it.options.release = 25
+}
+
+java {
+    withSourcesJar()
+    sourceCompatibility = JavaVersion.VERSION_25
+    targetCompatibility = JavaVersion.VERSION_25
+}
+
+jar {
+    from("LICENSE") {
+        rename { "${it}_${project.archivesName.get()}" }
+    }
+}
