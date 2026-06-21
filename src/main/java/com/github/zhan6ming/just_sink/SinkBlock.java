@@ -1,88 +1,52 @@
 package com.github.zhan6ming.just_sink;
 
-import com.mojang.logging.LogUtils;
-import net.minecraft.core.BlockPos;
-import net.minecraft.core.Direction;
-import net.minecraft.core.component.DataComponents;
-import net.minecraft.sounds.SoundEvent;
-import net.minecraft.sounds.SoundEvents;
-import net.minecraft.sounds.SoundSource;
-import net.minecraft.world.InteractionHand;
-import net.minecraft.world.InteractionResult;
-import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.item.ItemUtils;
-import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.Items;
-import net.minecraft.world.item.alchemy.PotionContents;
-import net.minecraft.world.item.alchemy.Potions;
-import net.minecraft.world.level.Level;
-import net.minecraft.world.level.block.Block;
-import net.minecraft.world.level.block.EntityBlock;
-import net.minecraft.world.level.block.HorizontalDirectionalBlock;
-import net.minecraft.world.level.block.RenderShape;
-import net.minecraft.world.level.block.entity.BlockEntity;
-import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.level.block.state.StateDefinition;
-import com.mojang.serialization.MapCodec;
-import net.minecraft.world.level.BlockGetter;
-import net.minecraft.world.level.material.Fluids;
-import net.minecraft.world.phys.AABB;
-import net.minecraft.world.phys.BlockHitResult;
-import net.minecraft.world.phys.shapes.CollisionContext;
-import net.minecraft.world.phys.shapes.Shapes;
-import net.minecraft.world.phys.shapes.VoxelShape;
-import net.neoforged.neoforge.capabilities.Capabilities;
-import net.neoforged.neoforge.common.SoundActions;
-import net.neoforged.neoforge.fluids.FluidType;
-import net.neoforged.neoforge.transfer.ResourceHandler;
-import net.neoforged.neoforge.transfer.access.ItemAccess;
-import net.neoforged.neoforge.transfer.fluid.FluidResource;
-import net.neoforged.neoforge.transfer.transaction.Transaction;
-import org.jetbrains.annotations.Nullable;
-import org.slf4j.Logger;
+import net.minecraft.block.Block;
+import net.minecraft.block.BlockRenderType;
+import net.minecraft.block.BlockState;
+import net.minecraft.block.HorizontalBlock;
+import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.fluid.Fluids;
+import net.minecraft.item.ItemStack;
+import net.minecraft.item.ItemUseContext;
+import net.minecraft.item.Items;
+import net.minecraft.potion.PotionUtils;
+import net.minecraft.potion.Potions;
+import net.minecraft.state.StateContainer;
+import net.minecraft.tileentity.TileEntity;
+import net.minecraft.util.ActionResultType;
+import net.minecraft.util.Direction;
+import net.minecraft.util.Hand;
+import net.minecraft.util.SoundCategory;
+import net.minecraft.util.SoundEvents;
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.BlockRayTraceResult;
+import net.minecraft.util.math.shapes.ISelectionContext;
+import net.minecraft.util.math.shapes.VoxelShape;
+import net.minecraft.util.math.shapes.VoxelShapes;
+import net.minecraft.util.math.AxisAlignedBB;
+import net.minecraft.world.IBlockReader;
+import net.minecraft.world.World;
+import net.minecraftforge.fluids.FluidAttributes;
+import net.minecraftforge.fluids.FluidStack;
+import net.minecraftforge.fluids.capability.CapabilityFluidHandler;
+import net.minecraftforge.fluids.capability.IFluidHandler;
 
-/**
- * 水槽方块 —— 实现 {@link EntityBlock} 以挂载 {@link SinkBlockEntity}。
- * <p>
- * 交互逻辑：
- * <ol>
- *     <li>空玻璃瓶 → 水瓶（硬编码，因玻璃瓶无流体 Capability 且需要 {@link PotionContents} 数据组件）</li>
- *     <li>通用 {@link ResourceHandler}{@code <}{@link FluidResource}{@code >} 兜底（自动兼容原版桶、模组流体容器等）</li>
- * </ol>
- * 自动化流体逻辑由 {@link SinkBlockEntity} 中的 {@link ResourceHandler}{@code <}{@link FluidResource}{@code >} 实现。
- */
-public class SinkBlock extends HorizontalDirectionalBlock implements EntityBlock {
+import java.util.Map;
 
-    private static final Logger LOGGER = LogUtils.getLogger();
+public class SinkBlock extends HorizontalBlock {
 
-    /**
-     * 水流体资源的延迟初始化。
-     * <p>
-     * 不能使用 {@code static final} 直接初始化，因为 {@link FluidResource#of} 在 NeoForge 26.X 中
-     * 需要访问注册表的组件绑定（"Components not bound yet"），而类加载时注册表尚未就绪。
-     */
-    private static FluidResource waterResource() {
-        return FluidResource.of(Fluids.WATER);
-    }
-
-    // 按模型元素定义碰撞箱（排除装饰性水龙头部分）
-    // 默认朝向 south（对应 blockstate y=0），然后旋转到各方向
-    private static final VoxelShape SHAPE_SOUTH = Shapes.or(
-            Block.box(0, 0, 0, 2, 14, 16),
-            Block.box(14, 0, 0, 16, 14, 16),
-            Block.box(2, 0, 0, 14, 14, 4),
-            Block.box(2, 0, 14, 14, 14, 16),
-            Block.box(2, 0, 4, 14, 10, 14)
+    private static final VoxelShape SHAPE_SOUTH = VoxelShapes.or(
+            Block.makeCuboidShape(0, 0, 0, 2, 14, 16),
+            Block.makeCuboidShape(14, 0, 0, 16, 14, 16),
+            Block.makeCuboidShape(2, 0, 0, 14, 14, 4),
+            Block.makeCuboidShape(2, 0, 14, 14, 14, 16),
+            Block.makeCuboidShape(2, 0, 4, 14, 10, 14)
     );
 
-    /**
-     * 将一个 VoxelShape 绕 Y 轴旋转（以方块中心 8,8 为原点）。
-     * 旋转角度：0°=south, 90°=west, 180°=north, 270°=east。
-     */
     private static VoxelShape rotateShape(VoxelShape shape, int steps) {
         if (steps == 0) return shape;
-        VoxelShape result = Shapes.empty();
-        for (AABB box : shape.toAabbs()) {
+        VoxelShape result = VoxelShapes.empty();
+        for (AxisAlignedBB box : shape.toBoundingBoxList()) {
             double x1 = box.minX * 16, z1 = box.minZ * 16;
             double x2 = box.maxX * 16, z2 = box.maxZ * 16;
             for (int i = 0; i < steps; i++) {
@@ -90,12 +54,12 @@ public class SinkBlock extends HorizontalDirectionalBlock implements EntityBlock
                 double nx2 = 16 - z1, nz2 = x2;
                 x1 = nx1; z1 = nz1; x2 = nx2; z2 = nz2;
             }
-            result = Shapes.or(result, Block.box(x1, box.minY * 16, z1, x2, box.maxY * 16, z2));
+            result = VoxelShapes.or(result, Block.makeCuboidShape(x1, box.minY * 16, z1, x2, box.maxY * 16, z2));
         }
         return result;
     }
 
-    private static final java.util.Map<Direction, VoxelShape> SHAPES = java.util.Map.of(
+    private static final Map<Direction, VoxelShape> SHAPES = Map.of(
             Direction.SOUTH, SHAPE_SOUTH,
             Direction.WEST, rotateShape(SHAPE_SOUTH, 1),
             Direction.NORTH, rotateShape(SHAPE_SOUTH, 2),
@@ -104,154 +68,116 @@ public class SinkBlock extends HorizontalDirectionalBlock implements EntityBlock
 
     public SinkBlock(Properties properties) {
         super(properties);
-        this.registerDefaultState(this.stateDefinition.any().setValue(FACING, Direction.NORTH));
+        this.setDefaultState(this.getDefaultState().with(HORIZONTAL_FACING, Direction.NORTH));
+    }
+
+    // MCP 1.16.5: fillStateContainer (may not be recognized as override with snapshot mappings)
+    protected void fillStateContainer(StateContainer.Builder<Block, BlockState> builder) {
+        builder.add(HORIZONTAL_FACING);
+    }
+
+    // MCP 1.16.5: getPlacementState (may not be recognized as override with snapshot mappings)
+    public BlockState getPlacementState(ItemUseContext context) {
+        return this.getDefaultState().with(HORIZONTAL_FACING, context.getPlacementHorizontalFacing().getOpposite());
+    }
+
+    // Forge 1.16.5: hasTileEntity / createTileEntity are Forge-patched methods on Block
+    // Remove @Override since they may not be recognized as overrides in all mapping sets
+    public boolean hasTileEntity(BlockState state) {
+        return true;
+    }
+
+    public TileEntity createTileEntity(BlockState state, IBlockReader world) {
+        return new SinkBlockEntity();
     }
 
     @Override
-    protected MapCodec<? extends HorizontalDirectionalBlock> codec() {
-        return ModRegistries.SINK_CODEC.get();
+    public VoxelShape getShape(BlockState state, IBlockReader world, BlockPos pos, ISelectionContext context) {
+        return SHAPES.getOrDefault(state.get(HORIZONTAL_FACING), SHAPE_SOUTH);
     }
 
+    // MCP 1.16.5: getRenderType (not getRenderShape)
     @Override
-    protected void createBlockStateDefinition(StateDefinition.Builder<Block, BlockState> builder) {
-        builder.add(FACING);
+    public BlockRenderType getRenderType(BlockState state) {
+        return BlockRenderType.MODEL;
     }
 
+    // MCP 1.16.5: onBlockActivated (not use)
+    // MCP 1.16.5: World.isRemote (not isClientSide)
+    // MCP 1.16.5: player.getHeldItem / setHeldItem
+    // MCP 1.16.5: PotionUtils.addPotionToItemStack / getPotionFromItem
+    // MCP 1.16.5: SoundEvents.ITEM_BOTTLE_FILL / ITEM_BOTTLE_EMPTY / ITEM_BUCKET_FILL / ITEM_BUCKET_EMPTY
+    // MCP 1.16.5: player.inventory.addItemStackToInventory / player.dropItem
     @Override
-    public BlockState getStateForPlacement(net.minecraft.world.item.context.BlockPlaceContext context) {
-        return this.defaultBlockState().setValue(FACING, context.getHorizontalDirection().getOpposite());
-    }
-
-    @Nullable
-    @Override
-    public BlockEntity newBlockEntity(BlockPos pos, BlockState state) {
-        return new SinkBlockEntity(pos, state);
-    }
-
-    @Override
-    protected VoxelShape getShape(BlockState state, BlockGetter level, BlockPos pos, CollisionContext context) {
-        return SHAPES.getOrDefault(state.getValue(FACING), SHAPE_SOUTH);
-    }
-
-    @Override
-    protected RenderShape getRenderShape(BlockState state) {
-        return RenderShape.MODEL;
-    }
-
-    /**
-     * 玩家手持物品右键方块时的交互逻辑。
-     * <p>
-     * 处理顺序：
-     * <ol>
-     *     <li>空玻璃瓶 → 水瓶（装水，硬编码）</li>
-     *     <li>水瓶 → 空玻璃瓶（倒水，硬编码）</li>
-     *     <li>通用 {@link ResourceHandler}{@code <}{@link FluidResource}{@code >} 兜底（桶等流体容器）</li>
-     * </ol>
-     */
-    @Override
-    protected InteractionResult useItemOn(ItemStack stack, BlockState state, Level level,
-                                           BlockPos pos, Player player, InteractionHand hand,
-                                           BlockHitResult hit) {
-        if (hand != InteractionHand.MAIN_HAND) {
-            return InteractionResult.PASS;
+    public ActionResultType onBlockActivated(BlockState state, World world, BlockPos pos, PlayerEntity player,
+                                              Hand hand, BlockRayTraceResult hit) {
+        if (hand != Hand.MAIN_HAND) {
+            return ActionResultType.PASS;
         }
 
-        if (level.getBlockEntity(pos) instanceof SinkBlockEntity) {
+        ItemStack stack = player.getHeldItem(hand);
 
-            // ======================== 空玻璃瓶 → 水瓶（装水）========================
-            if (stack.is(Items.GLASS_BOTTLE)) {
-                ItemStack waterBottle = new ItemStack(Items.POTION);
-                waterBottle.set(DataComponents.POTION_CONTENTS, new PotionContents(Potions.WATER));
-                player.setItemInHand(hand, ItemUtils.createFilledResult(stack, player, waterBottle));
-                level.playSound(player, pos, SoundEvents.BOTTLE_FILL, SoundSource.BLOCKS, 1.0F, 1.0F);
-                return InteractionResult.SUCCESS;
-            }
+        if (world.getTileEntity(pos) instanceof SinkBlockEntity) {
 
-            // ======================== 水瓶 → 空玻璃瓶（倒水）========================
-            if (stack.is(Items.POTION)) {
-                PotionContents contents = stack.get(DataComponents.POTION_CONTENTS);
-                if (contents != null && contents.is(Potions.WATER)) {
-                    player.setItemInHand(hand, ItemUtils.createFilledResult(stack, player, new ItemStack(Items.GLASS_BOTTLE)));
-                    level.playSound(player, pos, SoundEvents.BOTTLE_EMPTY, SoundSource.BLOCKS, 1.0F, 1.0F);
-                    return InteractionResult.SUCCESS;
-                }
-            }
-
-            // ======================== 通用 ResourceHandler<FluidResource> 处理 ========================
-            return handleFluidContainerInteraction(level, pos, player, hand);
-        }
-
-        return InteractionResult.PASS;
-    }
-
-    /**
-     * 通用流体容器交互处理 —— 通过 NeoForge 的 {@link ItemAccess} + {@link ResourceHandler}{@code <}{@link FluidResource}{@code >}
-     * Capability 系统与任何模组的流体容器交互。
-     * <p>
-     * 流程：
-     * <ol>
-     *     <li>通过 {@link ItemAccess#forPlayerInteraction} 获取物品访问（自动处理创造模式）</li>
-     *     <li>获取物品的流体 Capability</li>
-     *     <li>尝试从物品 extract 流体 → 有流体则倒入水槽（垃圾桶功能）</li>
-     *     <li>物品无流体 → 从水槽 insert 水填入物品（无限水源功能）</li>
-     *     <li>通过 {@link FluidResource#getFluidType()} 获取流体对应的音效</li>
-     * </ol>
-     */
-    private InteractionResult handleFluidContainerInteraction(Level level, BlockPos pos,
-                                                               Player player, InteractionHand hand) {
-        // 使用 ItemAccess.forPlayerInteraction 自动处理创造模式逻辑
-        ItemAccess itemAccess = ItemAccess.forPlayerInteraction(player, hand);
-        ResourceHandler<FluidResource> handlerItem = itemAccess.getCapability(Capabilities.Fluid.ITEM);
-        if (handlerItem == null) {
-            return InteractionResult.PASS;
-        }
-
-        // ===== 步骤 1：尝试从物品 extract 流体（物品 → 水槽，垃圾桶功能）=====
-        if (handlerItem.getAmountAsInt(0) > 0) {
-            FluidResource storedResource = handlerItem.getResource(0);
-            if (!storedResource.isEmpty()) {
-                try (Transaction transaction = Transaction.openRoot()) {
-                    int extracted = handlerItem.extract(storedResource, Integer.MAX_VALUE, transaction);
-                    if (extracted > 0) {
-                        transaction.commit();
-                        // 水槽吞噬流体（不存储，直接丢弃）
-                        playFluidSound(level, player, pos, storedResource, SoundActions.BUCKET_EMPTY);
-                        return InteractionResult.SUCCESS;
+            if (stack.getItem() == Items.GLASS_BOTTLE) {
+                ItemStack waterBottle = PotionUtils.addPotionToItemStack(new ItemStack(Items.POTION), Potions.WATER);
+                stack.shrink(1);
+                if (stack.isEmpty()) {
+                    player.setHeldItem(hand, waterBottle);
+                } else {
+                    if (!player.inventory.addItemStackToInventory(waterBottle)) {
+                        player.dropItem(waterBottle, false);
                     }
                 }
+                world.playSound(player, pos, SoundEvents.ITEM_BOTTLE_FILL, SoundCategory.BLOCKS, 1.0F, 1.0F);
+                return world.isRemote ? ActionResultType.SUCCESS : ActionResultType.CONSUME;
             }
+
+            if (stack.getItem() == Items.POTION) {
+                if (PotionUtils.getPotionFromItem(stack) == Potions.WATER) {
+                    stack.shrink(1);
+                    ItemStack emptyBottle = new ItemStack(Items.GLASS_BOTTLE);
+                    if (stack.isEmpty()) {
+                        player.setHeldItem(hand, emptyBottle);
+                    } else {
+                        if (!player.inventory.addItemStackToInventory(emptyBottle)) {
+                            player.dropItem(emptyBottle, false);
+                        }
+                    }
+                    world.playSound(player, pos, SoundEvents.ITEM_BOTTLE_EMPTY, SoundCategory.BLOCKS, 1.0F, 1.0F);
+                    return world.isRemote ? ActionResultType.SUCCESS : ActionResultType.CONSUME;
+                }
+            }
+
+            return handleFluidContainerInteraction(world, pos, player, hand);
         }
 
-        // ===== 步骤 2：尝试从水槽装水（水槽 → 物品，无限水源功能）=====
-        try (Transaction transaction = Transaction.openRoot()) {
-            int filled = handlerItem.insert(waterResource(), FluidType.BUCKET_VOLUME, transaction);
-            if (filled > 0) {
-                transaction.commit();
-                // 通过 FluidType 获取流体的装入音效
-                playFluidSound(level, player, pos, waterResource(), SoundActions.BUCKET_FILL);
-                return InteractionResult.SUCCESS;
-            }
-        }
-
-        return InteractionResult.PASS;
+        return ActionResultType.PASS;
     }
 
-    /**
-     * 播放流体相关音效。
-     * 通过 {@link FluidResource#getFluidType()} 获取流体对应的音效，兼容所有模组流体。
-     *
-     * @param level    世界
-     * @param player   玩家
-     * @param pos      方块位置
-     * @param resource 流体资源
-     * @param action   音效动作（{@link SoundActions#BUCKET_EMPTY} 或 {@link SoundActions#BUCKET_FILL}）
-     */
-    private void playFluidSound(Level level, Player player, BlockPos pos,
-                                 FluidResource resource, net.neoforged.neoforge.common.SoundAction action) {
-        SoundEvent sound = resource.getFluidType().getSound(action);
-        SoundEvent fallback = (action == SoundActions.BUCKET_EMPTY)
-                ? SoundEvents.BUCKET_EMPTY
-                : SoundEvents.BUCKET_FILL;
-        level.playSound(player, pos, sound != null ? sound : fallback, SoundSource.BLOCKS, 1.0F, 1.0F);
+    private ActionResultType handleFluidContainerInteraction(World world, BlockPos pos,
+                                                               PlayerEntity player, Hand hand) {
+        ItemStack stack = player.getHeldItem(hand);
+
+        return stack.getCapability(CapabilityFluidHandler.FLUID_HANDLER_ITEM_CAPABILITY).map(handler -> {
+            FluidStack drained = handler.drain(Integer.MAX_VALUE, IFluidHandler.FluidAction.SIMULATE);
+            if (!drained.isEmpty()) {
+                handler.drain(Integer.MAX_VALUE, IFluidHandler.FluidAction.EXECUTE);
+                player.setHeldItem(hand, handler.getContainer());
+                world.playSound(player, pos, SoundEvents.ITEM_BUCKET_EMPTY, SoundCategory.BLOCKS, 1.0F, 1.0F);
+                return ActionResultType.SUCCESS;
+            }
+
+            FluidStack water = new FluidStack(Fluids.WATER, FluidAttributes.BUCKET_VOLUME);
+            int filled = handler.fill(water, IFluidHandler.FluidAction.SIMULATE);
+            if (filled > 0) {
+                handler.fill(new FluidStack(Fluids.WATER, filled), IFluidHandler.FluidAction.EXECUTE);
+                player.setHeldItem(hand, handler.getContainer());
+                world.playSound(player, pos, SoundEvents.ITEM_BUCKET_FILL, SoundCategory.BLOCKS, 1.0F, 1.0F);
+                return ActionResultType.SUCCESS;
+            }
+
+            return ActionResultType.PASS;
+        }).orElse(ActionResultType.PASS);
     }
 }
