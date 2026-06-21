@@ -11,10 +11,8 @@ import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemUtils;
-import net.minecraft.world.item.BucketItem;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
-import net.minecraft.world.level.material.Fluid;
 import net.minecraft.world.item.alchemy.PotionContents;
 import net.minecraft.world.item.alchemy.Potions;
 import net.minecraft.world.level.Level;
@@ -175,26 +173,6 @@ public class SinkBlock extends HorizontalDirectionalBlock implements EntityBlock
                 if (contents != null && contents.is(Potions.WATER)) {
                     player.setItemInHand(hand, ItemUtils.createFilledResult(stack, player, new ItemStack(Items.GLASS_BOTTLE)));
                     level.playSound(player, pos, SoundEvents.BOTTLE_EMPTY, SoundSource.BLOCKS, 1.0F, 1.0F);
-                    return InteractionResult.SUCCESS;
-                }
-            }
-
-            // ======================== BucketItem 兜底（兼容不注册 Capability 的模组桶）========================
-            // SkyrootBucketItem（Aether II）等模组桶可能未注册 ResourceHandler<FluidResource> Capability，
-            // 导致通用流体容器交互无法识别。此处直接通过 BucketItem.getContent() 检查流体类型。
-            if (stack.getItem() instanceof BucketItem bucketItem) {
-                Fluid content = bucketItem.getContent();
-                if (content != Fluids.EMPTY) {
-                    // 有流体的桶 → 倒入水槽（垃圾桶功能），返回空桶
-                    ItemStack emptyBucket = new ItemStack(Items.BUCKET);
-                    player.setItemInHand(hand, ItemUtils.createFilledResult(stack, player, emptyBucket));
-                    level.playSound(player, pos, SoundEvents.BUCKET_EMPTY, SoundSource.BLOCKS, 1.0F, 1.0F);
-                    return InteractionResult.SUCCESS;
-                } else {
-                    // 空桶 → 从水槽装水（无限水源功能），返回水桶
-                    ItemStack waterBucket = new ItemStack(Items.WATER_BUCKET);
-                    player.setItemInHand(hand, ItemUtils.createFilledResult(stack, player, waterBucket));
-                    level.playSound(player, pos, SoundEvents.BUCKET_FILL, SoundSource.BLOCKS, 1.0F, 1.0F);
                     return InteractionResult.SUCCESS;
                 }
             }
