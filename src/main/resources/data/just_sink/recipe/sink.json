@@ -17,11 +17,11 @@
       "item": "minecraft:water_bucket"
     },
     "S": {
-      "tag": "c:stones"
+      "tag": "forge:stone"
     }
   },
   "result": {
-    "id": "just_sink:sink",
+    "item": "just_sink:sink",
     "count": 1
   }
 }

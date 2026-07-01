@@ -39,7 +39,7 @@ public class ModRegistries {
             () -> new SinkBlock(BlockBehaviour.Properties.of()
                     .mapColor(MapColor.STONE)
                     .requiresCorrectToolForDrops()
-                    .strength(2.0F, 6.0F)
+                    .strength(1.5F, 6.0F)
                     .sound(SoundType.STONE)));
 
     // ==================== 物品 ====================
