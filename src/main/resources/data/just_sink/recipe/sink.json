@@ -1,6 +1,11 @@
 {
   "type": "minecraft:crafting_shaped",
   "category": "building",
+  "unlock": [
+    {
+      "item": "minecraft:water_bucket"
+    }
+  ],
   "pattern": [
     "PIP",
     "WIW",
