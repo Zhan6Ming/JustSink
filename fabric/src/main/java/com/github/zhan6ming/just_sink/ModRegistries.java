@@ -44,7 +44,7 @@ public class ModRegistries {
                             .setId(SINK_BLOCK_KEY)
                             .mapColor(MapColor.STONE)
                             .requiresCorrectToolForDrops()
-                            .strength(2.0F, 6.0F)
+                            .strength(1.5F, 6.0F)
                             .sound(SoundType.STONE)
             )
     );
