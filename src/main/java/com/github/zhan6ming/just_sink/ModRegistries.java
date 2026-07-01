@@ -43,7 +43,7 @@ public class ModRegistries {
     public static final RegistryObject<Block> SINK_BLOCK = BLOCKS.register("sink",
             () -> new SinkBlock(BlockBehaviour.Properties.of(Material.STONE, MaterialColor.STONE)
                     .requiresCorrectToolForDrops()
-                    .strength(2.0F, 6.0F)
+                    .strength(1.5F, 6.0F)
                     .sound(SoundType.STONE)));
 
     // ==================== 物品 ====================
