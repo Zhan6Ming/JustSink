@@ -38,7 +38,7 @@ public class ModRegistries {
     public static final RegistryObject<Block> SINK_BLOCK = BLOCKS.register("sink",
             () -> new SinkBlock(AbstractBlock.Properties.create(Material.ROCK)
                     .setRequiresTool()
-                    .hardnessAndResistance(2.0F, 6.0F)
+                    .hardnessAndResistance(1.5F, 6.0F)
                     .sound(SoundType.STONE)));
 
     // MCP 1.16.5: Item.Properties.group() (not .tab())
