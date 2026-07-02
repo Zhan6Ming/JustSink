@@ -22,7 +22,7 @@
       "item": "minecraft:water_bucket"
     },
     "S": {
-      "tag": "c:stones"
+      "tag": "minecraft:stone_tool_materials"
     }
   },
   "result": {
