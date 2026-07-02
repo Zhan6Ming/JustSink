@@ -1,66 +1,57 @@
 package com.github.zhan6ming.just_sink;
 
-import net.minecraft.core.BlockPos;
-import net.minecraft.core.Direction;
-import net.minecraft.sounds.SoundEvents;
-import net.minecraft.sounds.SoundSource;
-import net.minecraft.world.InteractionHand;
-import net.minecraft.world.InteractionResult;
-import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.Items;
-import net.minecraft.world.item.alchemy.PotionUtils;
-import net.minecraft.world.item.alchemy.Potions;
-import net.minecraft.world.level.Level;
-import net.minecraft.world.level.block.Block;
-import net.minecraft.world.level.block.EntityBlock;
-import net.minecraft.world.level.block.HorizontalDirectionalBlock;
-import net.minecraft.world.level.block.RenderShape;
-import net.minecraft.world.level.block.entity.BlockEntity;
-import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.level.block.state.StateDefinition;
-import net.minecraft.world.level.BlockGetter;
-import net.minecraft.world.level.material.Fluid;
-import net.minecraft.world.level.material.Fluids;
-import net.minecraft.world.phys.AABB;
-import net.minecraft.world.phys.BlockHitResult;
-import net.minecraft.world.phys.shapes.CollisionContext;
-import net.minecraft.world.phys.shapes.Shapes;
-import net.minecraft.world.phys.shapes.VoxelShape;
+import net.minecraft.block.Block;
+import net.minecraft.block.BlockRenderType;
+import net.minecraft.block.BlockState;
+import net.minecraft.block.HorizontalBlock;
+import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.fluid.Fluid;
+import net.minecraft.fluid.Fluids;
+import net.minecraft.item.ItemStack;
+import net.minecraft.item.Items;
+import net.minecraft.potion.PotionUtils;
+import net.minecraft.potion.Potions;
+import net.minecraft.state.StateContainer;
+import net.minecraft.tileentity.TileEntity;
+import net.minecraft.util.ActionResultType;
+import net.minecraft.util.Direction;
+import net.minecraft.util.Hand;
+import net.minecraft.util.SoundCategory;
+import net.minecraft.util.SoundEvents;
+import net.minecraft.util.math.AxisAlignedBB;
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.BlockRayTraceResult;
+import net.minecraft.util.math.shapes.ISelectionContext;
+import net.minecraft.util.math.shapes.VoxelShape;
+import net.minecraft.util.math.shapes.VoxelShapes;
+import net.minecraft.world.IBlockReader;
+import net.minecraft.world.World;
 import net.minecraftforge.common.capabilities.CapabilityInject;
 import net.minecraftforge.common.util.LazyOptional;
 import net.minecraftforge.fluids.FluidAttributes;
 import net.minecraftforge.fluids.FluidStack;
+import net.minecraftforge.fluids.capability.CapabilityFluidHandler;
 import net.minecraftforge.fluids.capability.IFluidHandler;
 import net.minecraftforge.fluids.capability.IFluidHandlerItem;
-import org.jetbrains.annotations.Nullable;
 
+import javax.annotation.Nullable;
+import java.util.HashMap;
 import java.util.Map;
 
-/**
- * 水槽方块（Forge 1.16.5）。
- * <p>
- * 关键差异（对比 1.18.2）：
- * <ul>
- *     <li>使用 {@link Block.Properties} 替代 BlockBehaviour.Properties</li>
- *     <li>使用 {@link CapabilityInject} 获取 IFluidHandlerItem 能力</li>
- *     <li>使用 {@code instanceof} 模式匹配需要 Java 16+，1.16.5 使用显式转换</li>
- * </ul>
- */
-public class SinkBlock extends HorizontalDirectionalBlock implements EntityBlock {
+public class SinkBlock extends HorizontalBlock {
 
-    private static final VoxelShape SHAPE_SOUTH = Shapes.or(
-            Block.box(0, 0, 0, 2, 14, 16),
-            Block.box(14, 0, 0, 16, 14, 16),
-            Block.box(2, 0, 0, 14, 14, 4),
-            Block.box(2, 0, 14, 14, 14, 16),
-            Block.box(2, 0, 4, 14, 10, 14)
+    private static final VoxelShape SHAPE_SOUTH = VoxelShapes.or(
+            Block.makeCuboidShape(0, 0, 0, 2, 14, 16),
+            Block.makeCuboidShape(14, 0, 0, 16, 14, 16),
+            Block.makeCuboidShape(2, 0, 0, 14, 14, 4),
+            Block.makeCuboidShape(2, 0, 14, 14, 14, 16),
+            Block.makeCuboidShape(2, 0, 4, 14, 10, 14)
     );
 
     private static VoxelShape rotateShape(VoxelShape shape, int steps) {
         if (steps == 0) return shape;
-        VoxelShape result = Shapes.empty();
-        for (AABB box : shape.toAabbs()) {
+        VoxelShape result = VoxelShapes.empty();
+        for (AxisAlignedBB box : shape.toBoundingBoxList()) {
             double x1 = box.minX * 16, z1 = box.minZ * 16;
             double x2 = box.maxX * 16, z2 = box.maxZ * 16;
             for (int i = 0; i < steps; i++) {
@@ -68,139 +59,118 @@ public class SinkBlock extends HorizontalDirectionalBlock implements EntityBlock
                 double nx2 = 16 - z1, nz2 = x2;
                 x1 = nx1; z1 = nz1; x2 = nx2; z2 = nz2;
             }
-            result = Shapes.or(result, Block.box(x1, box.minY * 16, z1, x2, box.maxY * 16, z2));
+            result = VoxelShapes.or(result, Block.makeCuboidShape(x1, box.minY * 16, z1, x2, box.maxY * 16, z2));
         }
         return result;
     }
 
-    private static final Map<Direction, VoxelShape> SHAPES = Map.of(
-            Direction.SOUTH, SHAPE_SOUTH,
-            Direction.WEST, rotateShape(SHAPE_SOUTH, 1),
-            Direction.NORTH, rotateShape(SHAPE_SOUTH, 2),
-            Direction.EAST, rotateShape(SHAPE_SOUTH, 3)
-    );
+    private static final Map<Direction, VoxelShape> SHAPES;
 
-    // Forge 1.16.5 使用 @CapabilityInject 获取能力引用
-    @CapabilityInject(IFluidHandlerItem.class)
-    private static net.minecraftforge.common.capabilities.Capability<IFluidHandlerItem> FLUID_HANDLER_ITEM_CAP = null;
+    static {
+        Map<Direction, VoxelShape> map = new HashMap<>();
+        map.put(Direction.SOUTH, SHAPE_SOUTH);
+        map.put(Direction.WEST, rotateShape(SHAPE_SOUTH, 1));
+        map.put(Direction.NORTH, rotateShape(SHAPE_SOUTH, 2));
+        map.put(Direction.EAST, rotateShape(SHAPE_SOUTH, 3));
+        SHAPES = map;
+    }
 
     public SinkBlock(Block.Properties properties) {
         super(properties);
-        this.registerDefaultState(this.stateDefinition.any().setValue(FACING, Direction.NORTH));
+        this.setDefaultState(this.getDefaultState().with(HORIZONTAL_FACING, Direction.NORTH));
+    }
+
+    protected void fillStateContainer(StateContainer.Builder<Block, BlockState> builder) {
+        builder.add(HORIZONTAL_FACING);
+    }
+
+    public BlockState getPlacementState(net.minecraft.item.ItemUseContext context) {
+        return this.getDefaultState().with(HORIZONTAL_FACING, context.getPlacementHorizontalFacing().getOpposite());
+    }
+
+    public boolean hasTileEntity(BlockState state) {
+        return true;
+    }
+
+    public TileEntity createTileEntity(BlockState state, IBlockReader world) {
+        return new SinkBlockEntity();
     }
 
     @Override
-    protected void createBlockStateDefinition(StateDefinition.Builder<Block, BlockState> builder) {
-        builder.add(FACING);
+    public VoxelShape getShape(BlockState state, IBlockReader world, BlockPos pos, ISelectionContext context) {
+        return SHAPES.getOrDefault(state.get(HORIZONTAL_FACING), SHAPE_SOUTH);
     }
 
     @Override
-    public BlockState getStateForPlacement(net.minecraft.world.item.context.BlockPlaceContext context) {
-        return this.defaultBlockState().setValue(FACING, context.getHorizontalDirection().getOpposite());
-    }
-
-    @Nullable
-    @Override
-    public BlockEntity newBlockEntity(BlockPos pos, BlockState state) {
-        return new SinkBlockEntity(pos, state);
+    public BlockRenderType getRenderType(BlockState state) {
+        return BlockRenderType.MODEL;
     }
 
     @Override
-    public VoxelShape getShape(BlockState state, BlockGetter level, BlockPos pos, CollisionContext context) {
-        return SHAPES.getOrDefault(state.getValue(FACING), SHAPE_SOUTH);
-    }
+    public ActionResultType onBlockActivated(BlockState state, World world, BlockPos pos, PlayerEntity player,
+                                              Hand hand, BlockRayTraceResult hit) {
+        if (hand != Hand.MAIN_HAND) {
+            return ActionResultType.PASS;
+        }
 
-    @Override
-    public RenderShape getRenderShape(BlockState state) {
-        return RenderShape.MODEL;
-    }
+        ItemStack stack = player.getHeldItem(hand);
 
-    @Override
-    public InteractionResult use(BlockState state, Level level, BlockPos pos, Player player,
-                                  InteractionHand hand, BlockHitResult hit) {
-        ItemStack stack = player.getItemInHand(hand);
-        if (hand != InteractionHand.MAIN_HAND) return InteractionResult.PASS;
-
-        // 玻璃瓶装水（1.16.5 使用 PotionUtils）
-        if (stack.is(Items.GLASS_BOTTLE)) {
-            ItemStack waterBottle = PotionUtils.setPotion(new ItemStack(Items.POTION), Potions.WATER);
-            if (stack.getCount() == 1) {
-                player.setItemInHand(hand, waterBottle);
+        if (stack.getItem() == Items.GLASS_BOTTLE) {
+            ItemStack waterBottle = PotionUtils.addPotionToItemStack(new ItemStack(Items.POTION), Potions.WATER);
+            stack.shrink(1);
+            if (stack.isEmpty()) {
+                player.setHeldItem(hand, waterBottle);
             } else {
-                stack.shrink(1);
-                if (!player.getInventory().add(waterBottle)) {
-                    player.drop(waterBottle, false, true);
+                if (!player.inventory.addItemStackToInventory(waterBottle)) {
+                    player.dropItem(waterBottle, false);
                 }
             }
-            level.playSound(player, pos, SoundEvents.BOTTLE_FILL, SoundSource.BLOCKS, 1.0F, 1.0F);
-            return InteractionResult.sidedSuccess(level.isClientSide);
+            world.playSound(player, pos, SoundEvents.ITEM_BOTTLE_FILL, SoundCategory.BLOCKS, 1.0F, 1.0F);
+            return world.isRemote ? ActionResultType.SUCCESS : ActionResultType.CONSUME;
         }
 
-        // 通用 IFluidHandlerItem 处理
-        if (level.getBlockEntity(pos) instanceof SinkBlockEntity) {
-            SinkBlockEntity sinkEntity = (SinkBlockEntity) level.getBlockEntity(pos);
-            return handleFluidContainerInteraction(stack, level, pos, player, hand, sinkEntity);
+        if (stack.getItem() == Items.POTION) {
+            if (PotionUtils.getPotionFromItem(stack) == Potions.WATER) {
+                stack.shrink(1);
+                ItemStack emptyBottle = new ItemStack(Items.GLASS_BOTTLE);
+                if (stack.isEmpty()) {
+                    player.setHeldItem(hand, emptyBottle);
+                } else {
+                    if (!player.inventory.addItemStackToInventory(emptyBottle)) {
+                        player.dropItem(emptyBottle, false);
+                    }
+                }
+                world.playSound(player, pos, SoundEvents.ITEM_BOTTLE_EMPTY, SoundCategory.BLOCKS, 1.0F, 1.0F);
+                return world.isRemote ? ActionResultType.SUCCESS : ActionResultType.CONSUME;
+            }
         }
 
-        return InteractionResult.PASS;
+        return handleFluidContainerInteraction(world, pos, player, hand);
     }
 
-    private InteractionResult handleFluidContainerInteraction(ItemStack stack, Level level, BlockPos pos,
-                                                               Player player, InteractionHand hand,
-                                                               SinkBlockEntity sinkEntity) {
-        if (FLUID_HANDLER_ITEM_CAP == null) return InteractionResult.PASS;
+    private ActionResultType handleFluidContainerInteraction(World world, BlockPos pos,
+                                                              PlayerEntity player, Hand hand) {
+        ItemStack stack = player.getHeldItem(hand);
 
-        ItemStack copyStack = stack.copy();
-        copyStack.setCount(1);
-        LazyOptional<IFluidHandlerItem> handlerOpt = copyStack.getCapability(FLUID_HANDLER_ITEM_CAP);
-        if (!handlerOpt.isPresent()) return InteractionResult.PASS;
-
-        IFluidHandlerItem handlerItem = handlerOpt.orElseThrow(IllegalStateException::new);
-        boolean isCreative = player.getAbilities().instabuild;
-
-        FluidStack fluidInItem = handlerItem.drain(Integer.MAX_VALUE, IFluidHandler.FluidAction.SIMULATE);
-        if (!fluidInItem.isEmpty()) {
-            FluidStack drained = handlerItem.drain(fluidInItem.getAmount(),
-                    isCreative ? IFluidHandler.FluidAction.SIMULATE : IFluidHandler.FluidAction.EXECUTE);
+        return stack.getCapability(CapabilityFluidHandler.FLUID_HANDLER_ITEM_CAPABILITY).map(handler -> {
+            FluidStack drained = handler.drain(Integer.MAX_VALUE, IFluidHandler.FluidAction.SIMULATE);
             if (!drained.isEmpty()) {
-                sinkEntity.fill(drained, IFluidHandler.FluidAction.EXECUTE);
-                if (!isCreative) replaceItemInHand(player, hand, stack, handlerItem.getContainer());
-                level.playSound(player, pos, getEmptySound(drained.getFluid()), SoundSource.BLOCKS, 1.0F, 1.0F);
-                return InteractionResult.sidedSuccess(level.isClientSide);
+                handler.drain(Integer.MAX_VALUE, IFluidHandler.FluidAction.EXECUTE);
+                player.setHeldItem(hand, handler.getContainer());
+                world.playSound(player, pos, SoundEvents.ITEM_BUCKET_EMPTY, SoundCategory.BLOCKS, 1.0F, 1.0F);
+                return ActionResultType.SUCCESS;
             }
-        }
 
-        FluidStack waterToFill = new FluidStack(Fluids.WATER, FluidAttributes.BUCKET_VOLUME);
-        int filled = handlerItem.fill(waterToFill,
-                isCreative ? IFluidHandler.FluidAction.SIMULATE : IFluidHandler.FluidAction.EXECUTE);
-        if (filled > 0) {
-            if (!isCreative) replaceItemInHand(player, hand, stack, handlerItem.getContainer());
-            FluidStack resultFluid = handlerItem.getFluidInTank(0);
-            if (!resultFluid.isEmpty()) {
-                level.playSound(player, pos, getFillSound(resultFluid.getFluid()), SoundSource.BLOCKS, 1.0F, 1.0F);
+            FluidStack water = new FluidStack(Fluids.WATER, FluidAttributes.BUCKET_VOLUME);
+            int filled = handler.fill(water, IFluidHandler.FluidAction.SIMULATE);
+            if (filled > 0) {
+                handler.fill(new FluidStack(Fluids.WATER, filled), IFluidHandler.FluidAction.EXECUTE);
+                player.setHeldItem(hand, handler.getContainer());
+                world.playSound(player, pos, SoundEvents.ITEM_BUCKET_FILL, SoundCategory.BLOCKS, 1.0F, 1.0F);
+                return ActionResultType.SUCCESS;
             }
-            return InteractionResult.sidedSuccess(level.isClientSide);
-        }
 
-        return InteractionResult.PASS;
-    }
-
-    private void replaceItemInHand(Player player, InteractionHand hand, ItemStack original, ItemStack container) {
-        if (original.getCount() == 1) {
-            player.setItemInHand(hand, container);
-        } else {
-            original.shrink(1);
-            if (!player.getInventory().add(container)) {
-                player.drop(container, false, true);
-            }
-        }
-    }
-
-    private net.minecraft.sounds.SoundEvent getEmptySound(Fluid fluid) {
-        return fluid == Fluids.LAVA ? SoundEvents.BUCKET_EMPTY_LAVA : SoundEvents.BUCKET_EMPTY;
-    }
-
-    private net.minecraft.sounds.SoundEvent getFillSound(Fluid fluid) {
-        return fluid == Fluids.LAVA ? SoundEvents.BUCKET_FILL_LAVA : SoundEvents.BUCKET_FILL;
+            return ActionResultType.PASS;
+        }).orElse(ActionResultType.PASS);
     }
 }

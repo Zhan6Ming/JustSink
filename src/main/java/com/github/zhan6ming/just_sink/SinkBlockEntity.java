@@ -1,26 +1,30 @@
 package com.github.zhan6ming.just_sink;
 
-import net.minecraft.core.BlockPos;
-import net.minecraft.world.level.block.entity.BlockEntity;
-import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.level.material.Fluids;
+import net.minecraft.fluid.Fluids;
+import net.minecraft.tileentity.TileEntity;
+import net.minecraft.util.Direction;
+import net.minecraftforge.common.capabilities.Capability;
+import net.minecraftforge.common.util.LazyOptional;
 import net.minecraftforge.fluids.FluidAttributes;
 import net.minecraftforge.fluids.FluidStack;
+import net.minecraftforge.fluids.capability.CapabilityFluidHandler;
 import net.minecraftforge.fluids.capability.IFluidHandler;
 
-/**
- * 水槽方块实体（Forge 1.16.5）。
- * <p>
- * IFluidHandler 接口与 1.18.2 相同（net.minecraftforge.fluids.capability）。
- */
-public class SinkBlockEntity extends BlockEntity implements IFluidHandler {
+import javax.annotation.Nullable;
 
-    public SinkBlockEntity(BlockPos pos, BlockState blockState) {
-        super(ModRegistries.SINK_BLOCK_ENTITY.get(), pos, blockState);
+public class SinkBlockEntity extends TileEntity implements IFluidHandler {
+
+    private static final int TANK_COUNT = 1;
+    private final LazyOptional<IFluidHandler> fluidHandler = LazyOptional.of(() -> this);
+
+    public SinkBlockEntity() {
+        super(ModRegistries.SINK_BLOCK_ENTITY.get());
     }
 
     @Override
-    public int getTanks() { return 1; }
+    public int getTanks() {
+        return TANK_COUNT;
+    }
 
     @Override
     public FluidStack getFluidInTank(int tank) {
@@ -28,10 +32,14 @@ public class SinkBlockEntity extends BlockEntity implements IFluidHandler {
     }
 
     @Override
-    public boolean isFluidValid(int tank, FluidStack stack) { return true; }
+    public int getTankCapacity(int tank) {
+        return Integer.MAX_VALUE;
+    }
 
     @Override
-    public int getTankCapacity(int tank) { return Integer.MAX_VALUE; }
+    public boolean isFluidValid(int tank, FluidStack stack) {
+        return true;
+    }
 
     @Override
     public int fill(FluidStack resource, FluidAction action) {
@@ -42,12 +50,26 @@ public class SinkBlockEntity extends BlockEntity implements IFluidHandler {
     @Override
     public FluidStack drain(FluidStack resource, FluidAction action) {
         if (resource.isEmpty()) return FluidStack.EMPTY;
-        return new FluidStack(Fluids.WATER, resource.getAmount());
+        return drain(resource.getAmount(), action);
     }
 
     @Override
     public FluidStack drain(int maxDrain, FluidAction action) {
         if (maxDrain <= 0) return FluidStack.EMPTY;
         return new FluidStack(Fluids.WATER, maxDrain);
+    }
+
+    @Override
+    public <T> LazyOptional<T> getCapability(Capability<T> cap, @Nullable Direction side) {
+        if (cap == CapabilityFluidHandler.FLUID_HANDLER_CAPABILITY) {
+            return fluidHandler.cast();
+        }
+        return super.getCapability(cap, side);
+    }
+
+    @Override
+    public void remove() {
+        super.remove();
+        fluidHandler.invalidate();
     }
 }

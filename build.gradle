@@ -15,7 +15,7 @@ java {
 }
 
 minecraft {
-    mappings channel: 'official', version: minecraft_version
+    mappings channel: 'snapshot', version: '20210309-1.16.5'
 
     runs {
         client {
