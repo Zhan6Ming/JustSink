@@ -1,57 +1,131 @@
 package com.github.zhan6ming.just_sink;
 
-import net.minecraft.block.Block;
-import net.minecraft.block.SoundType;
-import net.minecraft.block.AbstractBlock;
-import net.minecraft.block.material.Material;
-import net.minecraft.item.BlockItem;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemGroup;
-import net.minecraft.item.ItemStack;
-import net.minecraft.tileentity.TileEntityType;
-import net.minecraftforge.eventbus.api.IEventBus;
-import net.minecraftforge.fml.RegistryObject;
-import net.minecraftforge.registries.DeferredRegister;
-import net.minecraftforge.registries.ForgeRegistries;
+import com.mojang.serialization.MapCodec;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.world.level.block.state.BlockBehaviour;
+import net.minecraft.network.chat.Component;
+import net.minecraft.world.item.BlockItem;
+import net.minecraft.world.item.CreativeModeTab;
+import net.minecraft.world.item.CreativeModeTabs;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.SoundType;
+import net.minecraft.world.level.block.entity.BlockEntityType;
+import net.minecraft.world.level.material.MapColor;
+import net.neoforged.bus.api.IEventBus;
+import net.neoforged.neoforge.registries.DeferredBlock;
+import net.neoforged.neoforge.registries.DeferredHolder;
+import net.neoforged.neoforge.registries.DeferredItem;
+import net.neoforged.neoforge.registries.DeferredRegister;
 
+import java.util.function.Supplier;
+
+/**
+ * 统一注册表类 —— 集中管理所有方块、物品、方块实体类型和创造模式标签页的注册。
+ * <p>
+ * 使用 NeoForge 推荐的 {@link DeferredRegister} 模式，
+ * 避免静态初始化器中直接引用注册对象，确保注册顺序安全。
+ */
 public class ModRegistries {
 
-    public static final DeferredRegister<Block> BLOCKS =
-            DeferredRegister.create(ForgeRegistries.BLOCKS, JustSink.MODID);
+    // ==================== 延迟注册器 ====================
 
-    public static final DeferredRegister<Item> ITEMS =
-            DeferredRegister.create(ForgeRegistries.ITEMS, JustSink.MODID);
+    /** 方块注册器 */
+    public static final DeferredRegister.Blocks BLOCKS =
+            DeferredRegister.createBlocks(JustSink.MODID);
 
-    public static final DeferredRegister<TileEntityType<?>> TILE_ENTITY_TYPES =
-            DeferredRegister.create(ForgeRegistries.TILE_ENTITIES, JustSink.MODID);
+    /** 物品注册器 */
+    public static final DeferredRegister.Items ITEMS =
+            DeferredRegister.createItems(JustSink.MODID);
 
-    // MCP 1.16.5: ItemGroup uses createIcon() (abstract method)
-    // MCP 1.16.5: AbstractBlock.Properties.create(Material) (not .of())
-    // MCP 1.16.5: .setRequiresTool() / .hardnessAndResistance() / .sound()
-    public static final ItemGroup CREATIVE_TAB = new ItemGroup("just_sink") {
-        @Override
-        public ItemStack createIcon() {
-            return new ItemStack(SINK_BLOCK.get());
-        }
-    };
+    /** 方块实体类型注册器 */
+    public static final DeferredRegister<BlockEntityType<?>> BLOCK_ENTITY_TYPES =
+            DeferredRegister.create(Registries.BLOCK_ENTITY_TYPE, JustSink.MODID);
 
-    public static final RegistryObject<Block> SINK_BLOCK = BLOCKS.register("sink",
-            () -> new SinkBlock(AbstractBlock.Properties.create(Material.ROCK)
-                    .setRequiresTool()
-                    .hardnessAndResistance(1.5F, 6.0F)
-                    .sound(SoundType.STONE)));
+    /** 方块类型（MapCodec）注册器 —— 用于序列化/反序列化方块对象 */
+    public static final DeferredRegister<MapCodec<? extends Block>> BLOCK_TYPES =
+            DeferredRegister.create(Registries.BLOCK_TYPE, JustSink.MODID);
 
-    // MCP 1.16.5: Item.Properties.group() (not .tab())
-    public static final RegistryObject<Item> SINK_BLOCK_ITEM = ITEMS.register("sink",
-            () -> new BlockItem(SINK_BLOCK.get(), new Item.Properties().group(CREATIVE_TAB)));
+    /** 创造模式标签页注册器 */
+    public static final DeferredRegister<CreativeModeTab> CREATIVE_MODE_TABS =
+            DeferredRegister.create(Registries.CREATIVE_MODE_TAB, JustSink.MODID);
 
-    public static final RegistryObject<TileEntityType<SinkBlockEntity>> SINK_BLOCK_ENTITY =
-            TILE_ENTITY_TYPES.register("sink",
-                    () -> TileEntityType.Builder.create(SinkBlockEntity::new, SINK_BLOCK.get()).build(null));
+    // ==================== 方块 ====================
 
+    /**
+     * 水槽方块 —— 石质外观，需要镐采集。
+     * <p>
+     * 使用 {@code registerBlock} 而非 {@code register}，确保方块 ID 在构造前注入到 Properties 中，
+     * 避免 NeoForge 1.21.11+ 中 {@code effectiveDrops()} 因 "Block id not set" 而崩溃。
+     */
+    public static final DeferredBlock<Block> SINK_BLOCK = BLOCKS.registerBlock("sink",
+            SinkBlock::new,
+            () -> BlockBehaviour.Properties.of()
+                    .mapColor(MapColor.STONE)
+                    .requiresCorrectToolForDrops()
+                    .strength(1.5F, 6.0F)
+                    .sound(SoundType.STONE));
+
+    // ==================== 方块类型（Codec）====================
+
+    /**
+     * 水槽方块的 MapCodec —— 用于方块序列化/反序列化。
+     * <p>
+     * 单独注册而非在 {@code codec()} 中内联创建，符合 NeoForge 最佳实践。
+     */
+    public static final Supplier<MapCodec<SinkBlock>> SINK_CODEC =
+            BLOCK_TYPES.register("sink", () -> BlockBehaviour.simpleCodec(SinkBlock::new));
+
+    // ==================== 物品 ====================
+
+    /**
+     * 水槽方块物品 —— 用于放置水槽方块。
+     */
+    public static final DeferredItem<BlockItem> SINK_BLOCK_ITEM =
+            ITEMS.registerSimpleBlockItem("sink", SINK_BLOCK);
+
+    // ==================== 方块实体类型 ====================
+
+    /**
+     * 水槽方块实体类型 —— 关联 {@link SinkBlockEntity} 和 {@link #SINK_BLOCK}。
+     * <p>
+     * NeoForge 1.21.10+ 中 {@link BlockEntityType} 使用直接构造函数，
+     * 不再需要旧版的 {@code Builder.of(...).build(null)} 模式。
+     */
+    public static final Supplier<BlockEntityType<SinkBlockEntity>> SINK_BLOCK_ENTITY =
+            BLOCK_ENTITY_TYPES.register("sink",
+                    () -> new BlockEntityType<>(
+                            SinkBlockEntity::new,
+                            SINK_BLOCK.get()
+                    ));
+
+    // ==================== 创造模式标签页 ====================
+
+    /**
+     * JustSink 创造模式标签页。
+     * <p>
+     * 注册后自动生效，无需外部引用。字段保留以便未来扩展。
+     */
+    @SuppressWarnings("unused")
+    public static final DeferredHolder<CreativeModeTab, CreativeModeTab> JUST_SINK_TAB =
+            CREATIVE_MODE_TABS.register("just_sink_tab",
+                    () -> CreativeModeTab.builder()
+                            .title(Component.translatable("itemGroup.just_sink"))
+                            .withTabsBefore(CreativeModeTabs.COMBAT)
+                            .icon(() -> SINK_BLOCK_ITEM.get().getDefaultInstance())
+                            .displayItems((parameters, output) -> output.accept(SINK_BLOCK_ITEM.get()))
+                            .build());
+
+    // ==================== 注册入口 ====================
+
+    /**
+     * 将所有延迟注册器绑定到模组事件总线。
+     * 在主模组类的构造函数中调用此方法。
+     */
     public static void register(IEventBus eventBus) {
         BLOCKS.register(eventBus);
         ITEMS.register(eventBus);
-        TILE_ENTITY_TYPES.register(eventBus);
+        BLOCK_ENTITY_TYPES.register(eventBus);
+        BLOCK_TYPES.register(eventBus);
+        CREATIVE_MODE_TABS.register(eventBus);
     }
 }
