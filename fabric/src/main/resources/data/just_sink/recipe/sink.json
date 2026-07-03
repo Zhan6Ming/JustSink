@@ -10,7 +10,7 @@
     "P": "#minecraft:planks",
     "I": "minecraft:iron_ingot",
     "W": "minecraft:water_bucket",
-    "S": "minecraft:cobblestone"
+    "S": "#c:stones"
   },
   "result": {
     "count": 1,
