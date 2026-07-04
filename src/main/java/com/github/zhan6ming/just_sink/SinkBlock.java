@@ -85,8 +85,8 @@ public class SinkBlock extends HorizontalBlock {
         builder.add(HORIZONTAL_FACING);
     }
 
-    // MCP 1.16.5: getPlacementState 可能不是标准重写方法名
-    public BlockState getPlacementState(net.minecraft.item.ItemUseContext context) {
+    @Override
+    public BlockState getStateForPlacement(net.minecraft.item.ItemUseContext context) {
         return this.getDefaultState().with(HORIZONTAL_FACING, context.getPlacementHorizontalFacing().getOpposite());
     }
 
