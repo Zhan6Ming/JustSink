@@ -86,7 +86,7 @@ public class SinkBlock extends HorizontalBlock {
     }
 
     @Override
-    public BlockState getStateForPlacement(net.minecraft.item.ItemUseContext context) {
+    public BlockState getStateForPlacement(net.minecraft.item.BlockItemUseContext context) {
         return this.getDefaultState().with(HORIZONTAL_FACING, context.getPlacementHorizontalFacing().getOpposite());
     }
 
