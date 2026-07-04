@@ -23,7 +23,6 @@ public class JustSink {
         IEventBus modEventBus = FMLJavaModLoadingContext.get().getModEventBus();
 
         modEventBus.addListener(this::commonSetup);
-        modEventBus.addListener(ModCapabilities::registerCapabilities);
 
         ModRegistries.register(modEventBus);
 
