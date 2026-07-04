@@ -12,13 +12,21 @@
     "SWS"
   ],
   "key": {
-    "P": "#minecraft:planks",
-    "I": "minecraft:iron_ingot",
-    "W": "minecraft:water_bucket",
-    "S": "#c:stones"
+    "P": {
+      "tag": "minecraft:planks"
+    },
+    "I": {
+      "item": "minecraft:iron_ingot"
+    },
+    "W": {
+      "item": "minecraft:water_bucket"
+    },
+    "S": {
+      "tag": "c:stones"
+    }
   },
   "result": {
-    "count": 1,
-    "id": "just_sink:sink"
+    "id": "just_sink:sink",
+    "count": 1
   }
 }
