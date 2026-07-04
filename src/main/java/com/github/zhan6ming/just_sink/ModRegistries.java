@@ -23,7 +23,7 @@ import net.minecraftforge.registries.RegistryObject;
  *     <li>使用 {@link Material} + {@link MaterialColor} 替代 MapColor</li>
  *     <li>使用 {@code ForgeRegistries.BLOCK_ENTITIES} 替代 BLOCK_ENTITY_TYPES</li>
  *     <li>{@code BlockBehaviour.Properties.of()} 需要 Material 参数</li>
- *     <li>CreativeModeTab 使用匿名类</li>
+ *     <li>CreativeModeTab 使用匿名类，Item.Properties.tab() 指定标签页</li>
  * </ul>
  */
 public class ModRegistries {
@@ -38,6 +38,15 @@ public class ModRegistries {
     public static final DeferredRegister<BlockEntityType<?>> BLOCK_ENTITY_TYPES =
             DeferredRegister.create(ForgeRegistries.BLOCK_ENTITIES, JustSink.MODID);
 
+    // ==================== 创造模式标签页（必须在物品之前定义）====================
+
+    public static final CreativeModeTab JUST_SINK_TAB = new CreativeModeTab("just_sink_tab") {
+        @Override
+        public net.minecraft.world.item.ItemStack makeIcon() {
+            return SINK_BLOCK_ITEM.get().getDefaultInstance();
+        }
+    };
+
     // ==================== 方块 ====================
 
     public static final RegistryObject<Block> SINK_BLOCK = BLOCKS.register("sink",
@@ -49,7 +58,7 @@ public class ModRegistries {
     // ==================== 物品 ====================
 
     public static final RegistryObject<Item> SINK_BLOCK_ITEM = ITEMS.register("sink",
-            () -> new BlockItem(SINK_BLOCK.get(), new Item.Properties()));
+            () -> new BlockItem(SINK_BLOCK.get(), new Item.Properties().tab(JUST_SINK_TAB)));
 
     // ==================== 方块实体类型 ====================
 
@@ -60,15 +69,6 @@ public class ModRegistries {
                             SinkBlockEntity::new,
                             SINK_BLOCK.get()
                     ).build(null));
-
-    // ==================== 创造模式标签页 ====================
-
-    public static final CreativeModeTab JUST_SINK_TAB = new CreativeModeTab("just_sink_tab") {
-        @Override
-        public net.minecraft.world.item.ItemStack makeIcon() {
-            return SINK_BLOCK_ITEM.get().getDefaultInstance();
-        }
-    };
 
     // ==================== 注册入口 ====================
 
