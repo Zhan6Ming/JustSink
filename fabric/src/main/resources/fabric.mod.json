@@ -7,7 +7,9 @@
   "authors": [
     "ZhanMing"
   ],
-  "contact": {},
+  "contact": {
+    "sources": "https://github.com/Zhan6Ming/JustSink"
+  },
   "license": "BSD-3-Clause",
   "icon": "assets/just_sink/icon.png",
   "environment": "*",
