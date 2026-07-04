@@ -22,7 +22,6 @@ public class JustSink {
     public JustSink() {
         IEventBus modEventBus = FMLJavaModLoadingContext.get().getModEventBus();
         modEventBus.addListener(this::commonSetup);
-        modEventBus.addListener(ModCapabilities::registerCapabilities);
         ModRegistries.register(modEventBus);
         MinecraftForge.EVENT_BUS.register(this);
     }
