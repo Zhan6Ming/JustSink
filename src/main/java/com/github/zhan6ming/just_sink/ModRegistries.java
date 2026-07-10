@@ -25,7 +25,7 @@ public class ModRegistries {
     public static final DeferredRegister<TileEntityType<?>> TILE_ENTITY_TYPES =
             DeferredRegister.create(ForgeRegistries.TILE_ENTITIES, JustSink.MODID);
 
-    public static final ItemGroup JUST_SINK_TAB = new ItemGroup("just_sink_tab") {
+    public static final ItemGroup JUST_SINK_TAB = new ItemGroup("just_sink") {
         @Override
         public ItemStack createIcon() {
             return SINK_BLOCK_ITEM.get().getDefaultInstance();
