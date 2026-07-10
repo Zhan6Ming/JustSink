@@ -4,12 +4,13 @@
   "pattern": [
     "PIP",
     "WIW",
-    "SWS"
+    "SBS"
   ],
   "key": {
     "P": "#minecraft:planks",
     "I": "minecraft:iron_ingot",
     "W": "minecraft:water_bucket",
+    "B": "minecraft:bucket",
     "S": "#c:stones"
   },
   "result": {
