@@ -40,7 +40,7 @@ public class ModRegistries {
 
     // ==================== 创造模式标签页（必须在物品之前定义）====================
 
-    public static final CreativeModeTab JUST_SINK_TAB = new CreativeModeTab("just_sink_tab") {
+    public static final CreativeModeTab JUST_SINK_TAB = new CreativeModeTab("just_sink") {
         @Override
         public net.minecraft.world.item.ItemStack makeIcon() {
             return SINK_BLOCK_ITEM.get().getDefaultInstance();
