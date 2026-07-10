@@ -3,7 +3,7 @@
   "pattern": [
     "PIP",
     "WIW",
-    "SWS"
+    "SBS"
   ],
   "key": {
     "P": {
@@ -14,6 +14,9 @@
     },
     "W": {
       "item": "minecraft:water_bucket"
+    },
+    "B": {
+      "item": "minecraft:bucket"
     },
     "S": {
       "tag": "forge:stone"

@@ -6,8 +6,10 @@ license = "${mod_license}"
 modId = "${mod_id}"
 version = "${mod_version}"
 displayName = "${mod_name}"
+displayURL = "${source_url}"
 authors = "${mod_authors}"
 logoFile = "sinklogo.png"
+issueTrackerURL = "${issue_tracker_url}"
 description = '''${mod_description}'''
 
 [[dependencies."${mod_id}"]]

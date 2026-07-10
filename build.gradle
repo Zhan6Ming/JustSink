@@ -55,7 +55,9 @@ processResources {
         mod_license            : mod_license,
         mod_version            : mod_version,
         mod_authors            : mod_authors,
-        mod_description        : mod_description
+        mod_description        : mod_description,
+        source_url             : source_url,
+        issue_tracker_url      : issue_tracker_url
     ]
     inputs.properties replaceProperties
     filesMatching('META-INF/mods.toml') { expand replaceProperties }
