@@ -1,6 +1,12 @@
 {
   "parent": "minecraft:recipes/root",
   "criteria": {
+    "has_the_recipe": {
+      "trigger": "minecraft:recipe_unlocked",
+      "conditions": {
+        "recipe": "just_sink:sink"
+      }
+    },
     "has_water_bucket": {
       "trigger": "minecraft:inventory_changed",
       "conditions": {
@@ -14,6 +20,7 @@
   },
   "requirements": [
     [
+      "has_the_recipe",
       "has_water_bucket"
     ]
   ],
