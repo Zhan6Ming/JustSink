@@ -6,6 +6,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.tags.TagKey;
+import net.minecraft.core.Direction;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
@@ -49,6 +50,9 @@ public class JustSink {
         // 注册 Capability 事件（RegisterCapabilitiesEvent 在所有注册完成后触发）
         modEventBus.addListener(ModCapabilities::registerCapabilities);
 
+        // 注册客户端渲染器
+        modEventBus.addListener(this::registerRenderers);
+
         // 将所有 DeferredRegister 绑定到模组事件总线
         // 这一步确保方块、物品、方块实体类型、创造标签页被正确注册
         ModRegistries.register(modEventBus);
@@ -60,6 +64,11 @@ public class JustSink {
     /** 通用设置阶段回调 */
     private void commonSetup(final FMLCommonSetupEvent event) {
         LOGGER.info("JustSink 模组通用设置完成！");
+    }
+
+    /** 注册客户端渲染器（仅客户端） */
+    private void registerRenderers(net.neoforged.neoforge.client.event.EntityRenderersEvent.RegisterRenderers event) {
+        event.registerBlockEntityRenderer(ModRegistries.SINK_BLOCK_ENTITY.get(), SinkBlockEntityRenderer::new);
     }
 
     /** 服务器启动事件监听 */
@@ -90,8 +99,8 @@ public class JustSink {
             return;
         }
 
-        // 仅处理 Shift+右键 + 主手
-        if (!player.isSecondaryUseActive() || event.getHand() != InteractionHand.MAIN_HAND) {
+        // 仅处理主手
+        if (event.getHand() != InteractionHand.MAIN_HAND) {
             return;
         }
 
@@ -104,25 +113,56 @@ public class JustSink {
         LOGGER.debug("[JustSink] 扳手检测: 物品={}, 在标签中={}", stack.getItem(), stack.is(wrenchTag));
 
         if (stack.is(wrenchTag)) {
-            if (!level.isClientSide) {
-                // 播放铁块破坏音效
-                level.playSound(null, pos, SoundType.METAL.getBreakSound(), SoundSource.BLOCKS, 1.0F, 1.0F);
-                // 移除方块（不掉落）
-                level.removeBlock(pos, false);
-                // 将水槽物品直接放入玩家物品栏
-                ItemStack sinkItem = ModRegistries.SINK_BLOCK_ITEM.get().getDefaultInstance();
-                if (!player.getInventory().add(sinkItem)) {
-                    // 物品栏满则掉落
-                    player.drop(sinkItem, false, true);
-                } else {
-                    // 播放物品拾取音效
-                    level.playSound(null, pos, SoundEvents.ITEM_PICKUP, SoundSource.PLAYERS, 0.2F, 1.0F);
+            if (player.isSecondaryUseActive()) {
+                // === Shift+扳手右键：拆取水槽 ===
+                if (!level.isClientSide) {
+                    level.playSound(null, pos, SoundType.METAL.getBreakSound(), SoundSource.BLOCKS, 1.0F, 1.0F);
+                    level.removeBlock(pos, false);
+                    ItemStack sinkItem = ModRegistries.SINK_BLOCK_ITEM.get().getDefaultInstance();
+                    if (!player.getInventory().add(sinkItem)) {
+                        player.drop(sinkItem, false, true);
+                    } else {
+                        level.playSound(null, pos, SoundEvents.ITEM_PICKUP, SoundSource.PLAYERS, 0.2F, 1.0F);
+                    }
+                }
+            } else {
+                // === 普通扳手右键：旋转水槽朝向 ===
+                if (!level.isClientSide) {
+                    Direction current = state.getValue(SinkBlock.FACING);
+                    // 顺时针旋转：SOUTH → WEST → NORTH → EAST → SOUTH
+                    Direction next = current.getClockWise();
+                    level.setBlock(pos, state.setValue(SinkBlock.FACING, next), 3);
+                    level.playSound(null, pos,
+                            net.minecraft.sounds.SoundEvent.createVariableRangeEvent(
+                                    ResourceLocation.fromNamespaceAndPath("just_sink", "sink_rotate")),
+                            SoundSource.BLOCKS, 1.0F, 1.0F);
                 }
             }
             event.setCanceled(true);
             event.setCancellationResult(
                     net.minecraft.world.InteractionResult.sidedSuccess(level.isClientSide)
             );
+        } else if (player.isSecondaryUseActive() && stack.isEmpty()) {
+            // === 空手 Shift+右键：加满水 / 放空水 ===
+            if (level.getBlockEntity(pos) instanceof SinkBlockEntity sinkEntity) {
+                if (sinkEntity.getWaterLevel() < SinkBlockEntity.MAX_WATER_LEVEL) {
+                    // 水未满 → 加满水
+                    if (!level.isClientSide) {
+                        sinkEntity.setWaterLevel(SinkBlockEntity.MAX_WATER_LEVEL);
+                    }
+                    level.playSound(player, pos, SoundEvents.BUCKET_FILL, SoundSource.BLOCKS, 1.0F, 1.0F);
+                } else if (sinkEntity.getWaterLevel() > 0) {
+                    // 水已满 → 放空至 0（液面消失）
+                    if (!level.isClientSide) {
+                        sinkEntity.setWaterLevel(0);
+                    }
+                    level.playSound(player, pos, SoundEvents.BUCKET_EMPTY, SoundSource.BLOCKS, 1.0F, 1.0F);
+                }
+                event.setCanceled(true);
+                event.setCancellationResult(
+                        net.minecraft.world.InteractionResult.sidedSuccess(level.isClientSide)
+                );
+            }
         }
     }
 }

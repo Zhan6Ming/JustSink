@@ -4,11 +4,14 @@ import com.mojang.logging.LogUtils;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.component.DataComponents;
+import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.sounds.SoundEvent;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.tags.TagKey;
+import net.minecraft.util.Mth;
+import net.minecraft.util.RandomSource;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.ItemInteractionResult;
 import net.minecraft.world.entity.player.Player;
@@ -24,6 +27,8 @@ import net.minecraft.world.level.block.EntityBlock;
 import net.minecraft.world.level.block.HorizontalDirectionalBlock;
 import net.minecraft.world.level.block.RenderShape;
 import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.entity.BlockEntityTicker;
+import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
 import com.mojang.serialization.MapCodec;
 import net.minecraft.world.level.BlockGetter;
@@ -119,6 +124,80 @@ public class SinkBlock extends HorizontalDirectionalBlock implements EntityBlock
         return new SinkBlockEntity(pos, state);
     }
 
+    @Nullable
+    @Override
+    public <T extends BlockEntity> BlockEntityTicker<T> getTicker(
+            Level level, BlockState state, BlockEntityType<T> type) {
+        // 服务端和客户端都需要 tick：服务端无操作，客户端驱动液面动画
+        return (lvl, pos, st, be) -> {
+            if (be instanceof SinkBlockEntity sinkEntity) {
+                sinkEntity.tick();
+
+                // 客户端：粒子计时器 > 0 时生成粒子
+                if (lvl.isClientSide && sinkEntity.getParticleTimer() > 0) {
+                    spawnFaucetParticles(lvl, pos, st, true);
+                }
+            }
+        };
+    }
+
+    /**
+     * 在水龙头喷嘴下方生成水滴粒子和雨滴粒子。
+     * <p>
+     * 水龙头喷嘴位置（默认 SOUTH 朝向）：x≈10.25/16, y=16/16, z=7/16。
+     * 根据方块朝向旋转粒子生成位置。
+     */
+    private void spawnFaucetParticles(Level level, BlockPos pos, BlockState state, boolean filling) {
+        RandomSource random = level.random;
+        Direction facing = state.getValue(FACING);
+
+        // 水龙头喷嘴尖端位置（默认 SOUTH 朝向，归一化到 0~1）
+        // 喷嘴尖端：x = 10.5/16, z = 7/16
+        double faucetX = 10.22 / 16.0;
+        double faucetZ = 6.7 / 16.0;
+
+        // 根据朝向旋转
+        double rx, rz;
+        switch (facing) {
+            case SOUTH -> { rx = faucetX; rz = faucetZ; }
+            case WEST -> { rx = 1.0 - faucetZ; rz = faucetX; }
+            case NORTH -> { rx = 1.0 - faucetX; rz = 1.0 - faucetZ; }
+            case EAST -> { rx = faucetZ; rz = 1.0 - faucetX; }
+            default -> { rx = faucetX; rz = faucetZ; }
+        }
+
+        double worldX = pos.getX() + rx;
+        double worldY = pos.getY() + 0.90; // 水龙头喷嘴顶部
+        double worldZ = pos.getZ() + rz;
+
+        // 雨滴粒子（从喷嘴落下）—— 每 tick 都生成确保可见
+        level.addParticle(ParticleTypes.FALLING_WATER,
+                worldX + (random.nextFloat() - 0.5) * 0.06,
+                worldY,
+                worldZ + (random.nextFloat() - 0.5) * 0.06,
+                0, -0.2, 0);
+
+        // 溅水粒子（落在底部）
+        if (random.nextFloat() < 0.3f) {
+            double bottomY = pos.getY() + 0.05;
+            level.addParticle(ParticleTypes.SPLASH,
+                    pos.getX() + 0.2 + random.nextFloat() * 0.6,
+                    bottomY,
+                    pos.getZ() + 0.4 + random.nextFloat() * 0.6,
+                    0, 0.01, 0);
+        }
+
+        // 雨滴/溅水粒子（落在底部）
+        if (random.nextFloat() < 0.25f) {
+            double bottomY = pos.getY() + 0.1;
+            level.addParticle(ParticleTypes.SPLASH,
+                    pos.getX() + 0.2 + random.nextFloat() * 0.6,
+                    bottomY,
+                    pos.getZ() + 0.4 + random.nextFloat() * 0.6,
+                    (random.nextFloat() - 0.5) * 0.05, 0.02, (random.nextFloat() - 0.5) * 0.05);
+        }
+    }
+
     @Override
     protected VoxelShape getShape(BlockState state, BlockGetter level, BlockPos pos, CollisionContext context) {
         return SHAPES.getOrDefault(state.getValue(FACING), SHAPE_SOUTH);
@@ -151,6 +230,19 @@ public class SinkBlock extends HorizontalDirectionalBlock implements EntityBlock
             player.setItemInHand(hand, ItemUtils.createFilledResult(stack, player, waterBottle));
             level.playSound(player, pos, SoundEvents.BOTTLE_FILL, SoundSource.BLOCKS, 1.0F, 1.0F);
             return ItemInteractionResult.sidedSuccess(level.isClientSide);
+        }
+
+        // ======================== Shift+右键 加满水（非扳手时）========================
+        if (player.isSecondaryUseActive()) {
+            if (level.getBlockEntity(pos) instanceof SinkBlockEntity sinkEntity) {
+                if (sinkEntity.getWaterLevel() < SinkBlockEntity.MAX_WATER_LEVEL) {
+                    if (!level.isClientSide) {
+                        sinkEntity.setWaterLevel(SinkBlockEntity.MAX_WATER_LEVEL);
+                    }
+                    level.playSound(player, pos, SoundEvents.BUCKET_FILL, SoundSource.BLOCKS, 1.0F, 1.0F);
+                    return ItemInteractionResult.sidedSuccess(level.isClientSide);
+                }
+            }
         }
 
         // ======================== 通用 IFluidHandlerItem 处理 ========================
