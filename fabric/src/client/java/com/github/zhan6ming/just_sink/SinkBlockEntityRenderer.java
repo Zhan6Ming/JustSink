@@ -51,10 +51,15 @@ public class SinkBlockEntityRenderer implements BlockEntityRenderer<SinkBlockEnt
         state.blockPos = be.getBlockPos();
         state.blockState = be.getBlockState();
         state.blockEntityType = be.getType();
-        // FULL_BRIGHT = (15 << 20) | (15 << 4) = 0xF000F0
-        state.lightCoords = be.getLevel() != null
-            ? 0xF000F0
-            : 0xF000F0;
+        // 使用 Level.getBrightness() + LightLayer 获取真实光照，手动打包为 lightCoords
+        // 格式：(skyLight << 20) | (blockLight << 4)
+        if (be.getLevel() != null) {
+            int blockLight = be.getLevel().getBrightness(net.minecraft.world.level.LightLayer.BLOCK, be.getBlockPos());
+            int skyLight = be.getLevel().getBrightness(net.minecraft.world.level.LightLayer.SKY, be.getBlockPos());
+            state.lightCoords = (skyLight << 20) | (blockLight << 4);
+        } else {
+            state.lightCoords = 0xF000F0; // FULL_BRIGHT fallback
+        }
 
         // 使用动画后的百分比判断可见性（确保下降动画能播放完）
         float percent = be.getWaterLevelPercent(tickProgress);
