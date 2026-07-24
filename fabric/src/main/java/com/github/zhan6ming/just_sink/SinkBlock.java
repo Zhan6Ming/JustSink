@@ -13,11 +13,19 @@ import net.fabricmc.fabric.api.transfer.v1.transaction.TransactionContext;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.component.DataComponents;
+import net.minecraft.core.particles.ParticleTypes;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.resources.Identifier;
+import net.minecraft.sounds.SoundEvent;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
+import net.minecraft.tags.TagKey;
+import net.minecraft.util.RandomSource;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemUtils;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -28,7 +36,10 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.EntityBlock;
 import net.minecraft.world.level.block.HorizontalDirectionalBlock;
 import net.minecraft.world.level.block.RenderShape;
+import net.minecraft.world.level.block.SoundType;
 import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.entity.BlockEntityTicker;
+import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.StateDefinition;
 import net.minecraft.world.level.BlockGetter;
@@ -43,8 +54,23 @@ import java.util.Map;
 
 /**
  * 水槽方块 —— 继承 {@link HorizontalDirectionalBlock} 并实现 {@link EntityBlock}。
+ * <p>
+ * 交互逻辑（参考 Create-Fly 的 FluidTankBlock 模式，所有交互在 Block 自身方法中处理）：
+ * <ol>
+ *     <li>扳手物品（c:tools/wrench 标签）→ 旋转/拆取</li>
+ *     <li>空玻璃瓶 → 水瓶（硬编码）</li>
+ *     <li>水瓶 → 空玻璃瓶（硬编码）</li>
+ *     <li>通用 Fabric Transfer API（桶、模组流体容器等）</li>
+ *     <li>空手 Shift+右键 → 加满/放空水</li>
+ * </ol>
  */
 public class SinkBlock extends HorizontalDirectionalBlock implements EntityBlock {
+
+    /** c:tools/wrench 通用扳手标签 */
+    private static final TagKey<Item> WRENCH_TAG = TagKey.create(
+            Registries.ITEM,
+            Identifier.fromNamespaceAndPath("c", "tools/wrench")
+    );
 
     private static final VoxelShape SHAPE_SOUTH = Shapes.or(
             Block.box(0, 0, 0, 2, 14, 16),
@@ -103,6 +129,69 @@ public class SinkBlock extends HorizontalDirectionalBlock implements EntityBlock
         return new SinkBlockEntity(pos, state);
     }
 
+    @Nullable
+    @Override
+    public <T extends BlockEntity> BlockEntityTicker<T> getTicker(
+            Level level, BlockState state, BlockEntityType<T> type) {
+        // 客户端驱动液面动画 + 粒子
+        return (lvl, pos, st, be) -> {
+            if (be instanceof SinkBlockEntity sinkEntity) {
+                sinkEntity.tick();
+                if (lvl.isClientSide() && sinkEntity.getParticleTimer() > 0) {
+                    spawnFaucetParticles(lvl, pos, st);
+                }
+            }
+        };
+    }
+
+    /**
+     * 在水龙头喷嘴下方生成水滴粒子和溅水粒子。
+     */
+    private void spawnFaucetParticles(Level level, BlockPos pos, BlockState state) {
+        RandomSource random = level.getRandom();
+        Direction facing = state.getValue(FACING);
+
+        double faucetX = 10.22 / 16.0;
+        double faucetZ = 6.7 / 16.0;
+
+        double rx, rz;
+        switch (facing) {
+            case SOUTH -> { rx = faucetX; rz = faucetZ; }
+            case WEST -> { rx = 1.0 - faucetZ; rz = faucetX; }
+            case NORTH -> { rx = 1.0 - faucetX; rz = 1.0 - faucetZ; }
+            case EAST -> { rx = faucetZ; rz = 1.0 - faucetX; }
+            default -> { rx = faucetX; rz = faucetZ; }
+        }
+
+        double worldX = pos.getX() + rx;
+        double worldY = pos.getY() + 0.90;
+        double worldZ = pos.getZ() + rz;
+
+        level.addParticle(ParticleTypes.FALLING_WATER,
+                worldX + (random.nextFloat() - 0.5) * 0.06,
+                worldY,
+                worldZ + (random.nextFloat() - 0.5) * 0.06,
+                0, -0.2, 0);
+
+        if (random.nextFloat() < 0.3f) {
+            double bottomY = pos.getY() + 0.05;
+            level.addParticle(ParticleTypes.SPLASH,
+                    pos.getX() + 0.2 + random.nextFloat() * 0.6,
+                    bottomY,
+                    pos.getZ() + 0.4 + random.nextFloat() * 0.6,
+                    0, 0.01, 0);
+        }
+
+        if (random.nextFloat() < 0.25f) {
+            double bottomY = pos.getY() + 0.1;
+            level.addParticle(ParticleTypes.SPLASH,
+                    pos.getX() + 0.2 + random.nextFloat() * 0.6,
+                    bottomY,
+                    pos.getZ() + 0.4 + random.nextFloat() * 0.6,
+                    (random.nextFloat() - 0.5) * 0.05, 0.02, (random.nextFloat() - 0.5) * 0.05);
+        }
+    }
+
     @Override
     protected VoxelShape getShape(BlockState state, BlockGetter level, BlockPos pos, CollisionContext context) {
         return SHAPES.getOrDefault(state.getValue(FACING), SHAPE_SOUTH);
@@ -113,61 +202,166 @@ public class SinkBlock extends HorizontalDirectionalBlock implements EntityBlock
         return RenderShape.MODEL;
     }
 
+    // ==================== 空手交互（Shift+右键加满/放空水）====================
+
     /**
-     * 玩家手持物品右键方块时的交互逻辑。
+     * 空手右键交互 —— 参考 Create-Fly 的 FluidTankBlock.useWithoutItem()。
+     * <p>
+     * 当玩家空手 Shift+右键时，加满或放空水。
+     */
+    @Override
+    protected InteractionResult useWithoutItem(BlockState state, Level level, BlockPos pos,
+                                                Player player, BlockHitResult hitResult) {
+        if (player.isShiftKeyDown()) {
+            if (level.getBlockEntity(pos) instanceof SinkBlockEntity sinkEntity) {
+                if (sinkEntity.getWaterLevel() < SinkBlockEntity.MAX_WATER_LEVEL) {
+                    if (!level.isClientSide()) {
+                        sinkEntity.setWaterLevel(SinkBlockEntity.MAX_WATER_LEVEL);
+                    }
+                    level.playSound(player, pos, SoundEvents.BUCKET_FILL, SoundSource.BLOCKS, 1.0F, 1.0F);
+                    return InteractionResult.SUCCESS;
+                } else {
+                    // 水已满 → 恢复到初始值 1 桶
+                    if (!level.isClientSide()) {
+                        sinkEntity.setWaterLevel(1);
+                    }
+                    level.playSound(player, pos, SoundEvents.BUCKET_EMPTY, SoundSource.BLOCKS, 1.0F, 1.0F);
+                    return InteractionResult.SUCCESS;
+                }
+            }
+        }
+        return InteractionResult.PASS;
+    }
+
+    // ==================== 持物品交互（扳手、玻璃瓶、流体容器）====================
+
+    /**
+     * 持物品右键交互 —— 参考 Create-Fly 的 FluidTankBlock.useItemOn()。
      * <p>
      * 处理顺序：
      * <ol>
-     *     <li>空玻璃瓶 → 水瓶（硬编码，因玻璃瓶无 FluidStorage.ITEM 实现）</li>
-     *     <li>水瓶 → 空玻璃瓶（硬编码，同理）</li>
-     *     <li>通用 Fabric Transfer API 处理（桶、模组流体容器等所有实现 FluidStorage.ITEM 的物品）</li>
+     *     <li>扳手物品（c:tools/wrench 标签）→ 旋转/拆取</li>
+     *     <li>空玻璃瓶 → 水瓶</li>
+     *     <li>水瓶 → 空玻璃瓶</li>
+     *     <li>通用 Fabric Transfer API 流体容器</li>
      * </ol>
      */
     @Override
     protected InteractionResult useItemOn(ItemStack stack, BlockState state, Level level,
                                            BlockPos pos, Player player, InteractionHand hand,
-                                           BlockHitResult hit) {
+                                           BlockHitResult hitResult) {
         if (hand != InteractionHand.MAIN_HAND) {
             return InteractionResult.PASS;
         }
 
-        if (level.getBlockEntity(pos) instanceof SinkBlockEntity) {
-
-            // ======================== 空玻璃瓶 → 水瓶（硬编码，玻璃瓶无 FluidStorage.ITEM）========================
-            if (stack.is(Items.GLASS_BOTTLE)) {
-                ItemStack waterBottle = new ItemStack(Items.POTION);
-                waterBottle.set(DataComponents.POTION_CONTENTS, new PotionContents(Potions.WATER));
-                player.setItemInHand(hand, ItemUtils.createFilledResult(stack, player, waterBottle));
-                level.playSound(player, pos, SoundEvents.BOTTLE_FILL, SoundSource.BLOCKS, 1.0F, 1.0F);
-                return InteractionResult.SUCCESS;
-            }
-
-            // ======================== 水瓶 → 空玻璃瓶（硬编码，同理）========================
-            if (stack.is(Items.POTION)) {
-                PotionContents contents = stack.get(DataComponents.POTION_CONTENTS);
-                if (contents != null && contents.is(Potions.WATER)) {
-                    player.setItemInHand(hand, ItemUtils.createFilledResult(stack, player, new ItemStack(Items.GLASS_BOTTLE)));
-                    level.playSound(player, pos, SoundEvents.BOTTLE_EMPTY, SoundSource.BLOCKS, 1.0F, 1.0F);
-                    return InteractionResult.SUCCESS;
-                }
-            }
-
-            // ======================== 通用 Fabric Transfer API 处理 ========================
-            // 通过 SingleSlotStorage 包装玩家手持槽位，创建可变的 ContainerItemContext
-            // 所有实现 FluidStorage.ITEM 的物品（桶、科技复兴单元、AE2 存储元件等）
-            // 都通过事务系统统一处理
-            return handleFluidContainerInteraction(level, pos, player, hand);
+        // ==================== 空手返回 TRY_WITH_EMPTY_HAND，让系统继续调用 useWithoutItem ====================
+        if (stack.isEmpty()) {
+            return InteractionResult.TRY_WITH_EMPTY_HAND;
         }
 
-        return InteractionResult.PASS;
+        // 注意：扳手交互已在 JustSink 的 UseBlockCallback 中处理，此处不再处理
+
+        if (!(level.getBlockEntity(pos) instanceof SinkBlockEntity)) {
+            return InteractionResult.PASS;
+        }
+
+        // ==================== 空玻璃瓶 → 水瓶 ====================
+        if (stack.is(Items.GLASS_BOTTLE)) {
+            ItemStack waterBottle = new ItemStack(Items.POTION);
+            waterBottle.set(DataComponents.POTION_CONTENTS, new PotionContents(Potions.WATER));
+            player.setItemInHand(hand, ItemUtils.createFilledResult(stack, player, waterBottle));
+            level.playSound(player, pos, SoundEvents.BOTTLE_FILL, SoundSource.BLOCKS, 1.0F, 1.0F);
+            return InteractionResult.SUCCESS;
+        }
+
+        // ==================== 水瓶 → 空玻璃瓶 ====================
+        if (stack.is(Items.POTION)) {
+            PotionContents contents = stack.get(DataComponents.POTION_CONTENTS);
+            if (contents != null && contents.is(Potions.WATER)) {
+                player.setItemInHand(hand, ItemUtils.createFilledResult(stack, player, new ItemStack(Items.GLASS_BOTTLE)));
+                level.playSound(player, pos, SoundEvents.BOTTLE_EMPTY, SoundSource.BLOCKS, 1.0F, 1.0F);
+                return InteractionResult.SUCCESS;
+            }
+        }
+
+        // ==================== 空桶 → 水桶（手动处理，堆叠物品兼容）========================
+        if (stack.is(Items.BUCKET)) {
+            if (!level.isClientSide()) {
+                ItemStack waterBucket = new ItemStack(Items.WATER_BUCKET);
+                player.setItemInHand(hand, ItemUtils.createFilledResult(stack, player, waterBucket));
+            }
+            level.playSound(player, pos, SoundEvents.BUCKET_FILL, SoundSource.BLOCKS, 1.0F, 1.0F);
+            return InteractionResult.SUCCESS;
+        }
+
+        // ==================== 水桶 → 空桶（手动处理，堆叠物品兼容）========================
+        if (stack.is(Items.WATER_BUCKET)) {
+            if (!level.isClientSide()) {
+                ItemStack emptyBucket = new ItemStack(Items.BUCKET);
+                player.setItemInHand(hand, ItemUtils.createFilledResult(stack, player, emptyBucket));
+            }
+            level.playSound(player, pos, SoundEvents.BUCKET_EMPTY, SoundSource.BLOCKS, 1.0F, 1.0F);
+            return InteractionResult.SUCCESS;
+        }
+
+        // ==================== 牛奶桶 → 空桶（垃圾桶功能，丢弃牛奶）========================
+        if (stack.is(Items.MILK_BUCKET)) {
+            if (!level.isClientSide()) {
+                ItemStack emptyBucket = new ItemStack(Items.BUCKET);
+                player.setItemInHand(hand, ItemUtils.createFilledResult(stack, player, emptyBucket));
+            }
+            level.playSound(player, pos, SoundEvents.BUCKET_EMPTY, SoundSource.BLOCKS, 1.0F, 1.0F);
+            return InteractionResult.SUCCESS;
+        }
+
+        // ==================== 通用 Fabric Transfer API 处理（模组流体容器）========================
+        return handleFluidContainerInteraction(level, pos, player, hand);
     }
+
+    // ==================== 扳手交互处理 ====================
+
+    /**
+     * 扳手交互 —— 参考 Create-Fly 的 WrenchItem.useOn() + IWrenchable。
+     * <p>
+     * Shift+扳手：拆取水槽方块并掉落物品。
+     * 普通扳手：顺时针旋转朝向。
+     */
+    private InteractionResult handleWrenchInteraction(ItemStack stack, BlockState state,
+                                                       Level level, BlockPos pos, Player player) {
+        JustSink.LOGGER.info("[JustSink] handleWrench! shift={}, client={}", player.isShiftKeyDown(), level.isClientSide());
+        if (player.isShiftKeyDown()) {
+            // === Shift+扳手右键：拆取水槽 ===
+            JustSink.LOGGER.info("[JustSink] BREAKING SINK! client={}", level.isClientSide());
+            if (!level.isClientSide()) {
+                level.playSound(null, pos, SoundType.METAL.getBreakSound(), SoundSource.BLOCKS, 1.0F, 1.0F);
+                ItemStack sinkItem = ModRegistries.SINK_BLOCK_ITEM.getDefaultInstance();
+                level.destroyBlock(pos, false);
+                if (player != null && !player.isCreative()) {
+                    player.getInventory().placeItemBackInInventory(sinkItem);
+                }
+            }
+            return InteractionResult.SUCCESS;
+        } else {
+            // === 普通扳手右键：旋转水槽朝向 ===
+            if (!level.isClientSide()) {
+                Direction current = state.getValue(FACING);
+                Direction next = current.getClockWise();
+                level.setBlock(pos, state.setValue(FACING, next), 3);
+                SoundEvent rotateSound = SoundEvent.createVariableRangeEvent(
+                        Identifier.fromNamespaceAndPath("just_sink", "sink_rotate"));
+                level.playSound(null, pos, rotateSound, SoundSource.BLOCKS, 1.0F, 1.0F);
+            }
+            return InteractionResult.SUCCESS;
+        }
+    }
+
+    // ==================== 流体容器交互处理 ====================
 
     /**
      * 通用流体容器交互处理 —— 通过 Fabric Transfer API 与任何实现 {@link FluidStorage#ITEM} 的物品交互。
      */
     private InteractionResult handleFluidContainerInteraction(Level level, BlockPos pos,
                                                                Player player, InteractionHand hand) {
-        // 创建可变的物品槽位包装
         PlayerHandSlotStorage handSlot = new PlayerHandSlotStorage(player, hand);
         ContainerItemContext itemContext = ContainerItemContext.ofSingleSlot(handSlot);
         Storage<FluidVariant> itemStorage = itemContext.find(FluidStorage.ITEM);
@@ -208,16 +402,6 @@ public class SinkBlock extends HorizontalDirectionalBlock implements EntityBlock
 
     /**
      * 可变的玩家手持槽位包装 —— 实现 {@link SingleSlotStorage}{@code <}{@link ItemVariant}{@code >}。
-     * <p>
-     * 当模组物品的流体存储通过 {@link ContainerItemContext} 修改物品变体时
-     * （例如空单元 → 水单元），此槽位的 {@link #extract} 和 {@link #insert}
-     * 会被调用来执行物品交换。
-     * <p>
-     * 由于这是一个单物品槽位（玩家手持），insert 和 extract 的逻辑是：
-     * <ul>
-     *     <li>extract：如果请求的变体匹配当前物品，清空槽位并返回数量</li>
-     *     <li>insert：如果槽位为空，放入新物品并返回数量</li>
-     * </ul>
      */
     private static class PlayerHandSlotStorage implements SingleSlotStorage<ItemVariant> {
         private final Player player;
@@ -238,13 +422,25 @@ public class SinkBlock extends HorizontalDirectionalBlock implements EntityBlock
 
         @Override
         public long insert(ItemVariant variant, long maxAmount, TransactionContext transaction) {
-            if (maxAmount <= 0 || !getStack().isEmpty()) {
+            if (maxAmount <= 0) {
                 return 0;
             }
-            // 槽位为空时，放入新物品
-            long inserted = Math.min(maxAmount, variant.getItem().getDefaultMaxStackSize());
-            setStack(variant.toStack((int) inserted));
-            return inserted;
+            // 如果槽位为空，直接放入
+            if (getStack().isEmpty()) {
+                long inserted = Math.min(maxAmount, variant.getItem().getDefaultMaxStackSize());
+                setStack(variant.toStack((int) inserted));
+                return inserted;
+            }
+            // 如果槽位不为空但物品类型不同：将新物品放入背包（extract 已经处理了原物品的减少）
+            ItemStack current = getStack();
+            if (!ItemVariant.of(current).equals(variant)) {
+                ItemStack filled = variant.toStack(1);
+                if (!player.getInventory().add(filled)) {
+                    player.drop(filled, false);
+                }
+                return 1;
+            }
+            return 0;
         }
 
         @Override
@@ -281,6 +477,5 @@ public class SinkBlock extends HorizontalDirectionalBlock implements EntityBlock
         public long getCapacity() {
             return getStack().isEmpty() ? 64 : getStack().getMaxStackSize();
         }
-
     }
 }

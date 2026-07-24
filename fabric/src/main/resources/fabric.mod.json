@@ -16,6 +16,9 @@
   "entrypoints": {
     "main": [
       "com.github.zhan6ming.just_sink.JustSink"
+    ],
+    "client": [
+      "com.github.zhan6ming.just_sink.JustSinkClient"
     ]
   },
   "depends": {
