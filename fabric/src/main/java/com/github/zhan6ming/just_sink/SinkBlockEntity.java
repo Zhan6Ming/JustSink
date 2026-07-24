@@ -10,15 +10,12 @@ import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.util.ProblemReporter;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.material.Fluids;
-import net.minecraft.world.level.storage.TagValueOutput;
 import net.minecraft.world.level.storage.ValueInput;
 import net.minecraft.world.level.storage.ValueOutput;
 import org.jetbrains.annotations.Nullable;
-import org.slf4j.LoggerFactory;
 
 import java.util.Collections;
 import java.util.Iterator;
@@ -126,16 +123,11 @@ public class SinkBlockEntity extends BlockEntity {
     // ==================== 网络同步（参考 Create-Fly 的 SyncedBlockEntity）====================
 
     /**
-     * 客户端更新标签 —— MC 26.2 中 getUpdateTag 使用 TagValueOutput。
-     * 参考 Create-Fly 的 SyncedBlockEntity.getUpdateTag()。
+     * 客户端更新标签 —— 使用 saveWithoutMetadata() 简化实现。
      */
     @Override
     public CompoundTag getUpdateTag(HolderLookup.Provider registries) {
-        try (ProblemReporter.ScopedCollector logging = new ProblemReporter.ScopedCollector(problemPath(), LoggerFactory.getLogger(JustSink.MOD_ID))) {
-            TagValueOutput view = TagValueOutput.createWithContext(logging, registries);
-            saveAdditional(view);
-            return view.buildResult();
-        }
+        return saveWithoutMetadata(registries);
     }
 
     @Nullable

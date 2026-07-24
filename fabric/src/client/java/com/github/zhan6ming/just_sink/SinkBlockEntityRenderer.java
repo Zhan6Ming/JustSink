@@ -15,7 +15,6 @@ import net.minecraft.client.renderer.state.level.CameraRenderState;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.core.Direction;
 import net.minecraft.core.Vec3i;
-import net.minecraft.util.LightCoordsUtil;
 import net.minecraft.world.level.block.HorizontalDirectionalBlock;
 import net.minecraft.world.level.material.Fluids;
 import net.minecraft.world.phys.Vec3;
@@ -52,9 +51,10 @@ public class SinkBlockEntityRenderer implements BlockEntityRenderer<SinkBlockEnt
         state.blockPos = be.getBlockPos();
         state.blockState = be.getBlockState();
         state.blockEntityType = be.getType();
+        // FULL_BRIGHT = (15 << 20) | (15 << 4) = 0xF000F0
         state.lightCoords = be.getLevel() != null
-            ? LightCoordsUtil.getLightCoords(be.getLevel(), be.getBlockPos())
-            : LightCoordsUtil.FULL_BRIGHT;
+            ? 0xF000F0
+            : 0xF000F0;
 
         // 使用动画后的百分比判断可见性（确保下降动画能播放完）
         float percent = be.getWaterLevelPercent(tickProgress);
