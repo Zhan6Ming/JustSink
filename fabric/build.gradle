@@ -9,6 +9,17 @@ base {
     archivesName = "${project.mod_id}-fabric"
 }
 
+loom {
+    splitEnvironmentSourceSets()
+    accessWidenerPath = file("src/main/resources/just_sink.accesswidener")
+    mods {
+        "${project.mod_id}" {
+            sourceSet sourceSets.main
+            sourceSet sourceSets.client
+        }
+    }
+}
+
 java.toolchain.languageVersion = JavaLanguageVersion.of(25)
 
 dependencies {
