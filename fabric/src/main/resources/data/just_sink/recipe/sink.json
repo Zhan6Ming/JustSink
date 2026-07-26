@@ -1,0 +1,20 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "building",
+  "pattern": [
+    "PIP",
+    "WIW",
+    "SBS"
+  ],
+  "key": {
+    "P": "#minecraft:planks",
+    "I": "minecraft:iron_ingot",
+    "W": "minecraft:water_bucket",
+    "B": "minecraft:bucket",
+    "S": "#c:stones"
+  },
+  "result": {
+    "count": 1,
+    "id": "just_sink:sink"
+  }
+}

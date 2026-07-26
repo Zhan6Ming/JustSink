@@ -1,0 +1,29 @@
+﻿{
+  "schemaVersion": 1,
+  "id": "just_sink",
+  "version": "${version}",
+  "name": "JustSink",
+  "description": "Just added a sink",
+  "authors": [
+    "ZhanMing"
+  ],
+  "contact": {
+    "sources": "https://github.com/Zhan6Ming/JustSink"
+  },
+  "license": "BSD-3-Clause",
+  "icon": "assets/just_sink/icon.png",
+  "environment": "*",
+  "entrypoints": {
+    "main": [
+      "com.github.zhan6ming.just_sink.JustSink"
+    ],
+    "client": [
+      "com.github.zhan6ming.just_sink.JustSinkClient"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=0.18.0",
+    "fabric-api": "*",
+    "minecraft": "~1.21.11"
+  }
+}
