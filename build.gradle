@@ -4,7 +4,7 @@ plugins {
     id 'net.minecraftforge.gradle' version '[5.1,6.0)'
 }
 
-version = "forge-${mod_version}"
+version = "forge-${mod_version}-${minecraft_version}"
 group = mod_group_id
 
 archivesBaseName = mod_id
