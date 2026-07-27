@@ -1,0 +1,11 @@
+{
+  "sink_rotate": {
+    "subtitle": "subtitles.just_sink.sink_rotate",
+    "sounds": [
+      {
+        "name": "just_sink:sink_rotate",
+        "stream": false
+      }
+    ]
+  }
+}
